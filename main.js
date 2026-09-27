@@ -76,8 +76,10 @@ function startGame(color) {
     playerColor = color;
     obsidianColor = color === "w" ? "b" : "w";
 
-    chess = new Chess();
-
+    // Controleert of Chess een functie/klasse is, of dat de klasse binnen Chess.Chess zit
+    const ChessCtor = typeof Chess === "function" ? Chess : Chess.Chess;
+    chess = new ChessCtor();
+    
     selectedSquare = null;
     gameStarted = true;
     obsidianThinking = false;
