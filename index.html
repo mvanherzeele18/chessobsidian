@@ -1,158 +1,143 @@
 <!DOCTYPE html>
-
 <html lang="nl">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="theme-color" content="#0b0d10">
 
-```
-<title>Chess Obsidian</title>
+    <title>Obsidian Chess</title>
 
-<!-- Eigen CSS -->
-<link rel="stylesheet" href="style.css">
-
-<!-- Chessboard.js CSS -->
-<link
-    rel="stylesheet"
-    href="https://cdnjs.cloudflare.com/ajax/libs/chessboard-js/1.0.0/chessboard-1.0.0.min.css"
->
-```
-
+    <link rel="stylesheet" href="style.css">
 </head>
 
 <body>
 
-```
-<main class="app">
+    <div class="app">
 
-    <!-- Header -->
-    <header class="topbar">
-        <div>
-            <p class="eyebrow">CHESS ENGINE</p>
+        <header class="topbar">
+            <div>
+                <p class="eyebrow">CHESS ENGINE</p>
+                <h1>♟ Obsidian</h1>
+                <p class="subtitle">Speel schaak tegen Obsidian.</p>
+            </div>
 
-            <h1>
-                <span class="logo">♟</span>
-                Obsidian
-            </h1>
-
-            <p class="subtitle">
-                Speel tegen je eigen chessbot.
-            </p>
-        </div>
-
-        <div class="status" id="status">
-            <span class="status-dot"></span>
-            Klaar om te spelen
-        </div>
-    </header>
+            <div id="status" class="status">
+                Kies je kleur
+            </div>
+        </header>
 
 
-    <!-- Game -->
-    <section class="game-layout">
+        <!-- Kleur kiezen -->
+        <section id="setup" class="setup">
 
-        <!-- Chessboard -->
-        <div class="board-panel">
-            <div id="board" aria-label="Schaakbord"></div>
-        </div>
+            <div class="setup-card">
+
+                <p class="eyebrow">NIEUW SPEL</p>
+
+                <h2>Kies je kleur</h2>
+
+                <p class="description">
+                    Kies met welke kleur je wilt spelen.
+                </p>
+
+                <div class="color-buttons">
+
+                    <button
+                        id="whiteBtn"
+                        class="color-button"
+                        type="button"
+                    >
+                        <span class="piece-icon">♔</span>
+                        <span>
+                            <strong>Wit</strong>
+                            <small>Jij begint</small>
+                        </span>
+                    </button>
+
+                    <button
+                        id="blackBtn"
+                        class="color-button"
+                        type="button"
+                    >
+                        <span class="piece-icon">♚</span>
+                        <span>
+                            <strong>Zwart</strong>
+                            <small>Obsidian begint</small>
+                        </span>
+                    </button>
+
+                </div>
+
+            </div>
+
+        </section>
 
 
-        <!-- Sidebar -->
-        <aside class="side-panel">
+        <!-- Spel -->
+        <main id="game" class="game hidden">
 
-            <!-- New game -->
-            <div class="card">
+            <section class="board-section">
 
-                <h2>Nieuw spel</h2>
+                <div id="board" class="board"></div>
 
-                <label for="colorSelect">
-                    Jouw kleur
-                </label>
+            </section>
 
-                <select id="colorSelect">
-                    <option value="white">Wit</option>
-                    <option value="black">Zwart</option>
-                    <option value="random">Random</option>
-                </select>
+
+            <aside class="sidebar">
+
+                <div class="card">
+
+                    <div class="card-header">
+                        <h2>Obsidian</h2>
+                        <span class="online-dot"></span>
+                    </div>
+
+                    <p id="gameMessage">
+                        Klaar om te spelen.
+                    </p>
+
+                </div>
+
+
+                <div class="card">
+
+                    <div class="card-header">
+                        <h2>Zetten</h2>
+
+                        <span id="moveCount" class="move-count">
+                            0
+                        </span>
+                    </div>
+
+                    <div id="moves" class="moves">
+                        <p class="empty-moves">
+                            Nog geen zetten.
+                        </p>
+                    </div>
+
+                </div>
+
 
                 <button
-                    id="startBtn"
-                    class="primary"
+                    id="newGameBtn"
+                    class="new-game-button"
                     type="button"
                 >
                     Nieuw spel
                 </button>
 
-            </div>
+            </aside>
+
+        </main>
+
+    </div>
 
 
-            <!-- Moves -->
-            <div class="card">
+    <!-- chess.js -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
 
-                <div class="card-heading">
-
-                    <h2>Zetten</h2>
-
-                    <span id="moveCount">
-                        0
-                    </span>
-
-                </div>
-
-                <div
-                    id="moves"
-                    class="moves"
-                    aria-live="polite"
-                >
-                    <span class="empty">
-                        Nog geen zetten.
-                    </span>
-                </div>
-
-            </div>
-
-
-            <!-- Information -->
-            <div class="card info">
-
-                <h2>Obsidian</h2>
-
-                <p>
-                    Speel schaak tegen Obsidian.
-                    De chess engine kan later worden
-                    uitgebreid met verschillende
-                    moeilijkheidsniveaus en evaluaties.
-                </p>
-
-            </div>
-
-        </aside>
-
-    </section>
-
-</main>
-
-
-<!-- =========================================
-     Libraries
-     ========================================= -->
-
-<!-- jQuery -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.7.1/jquery.min.js"></script>
-
-<!-- Chess.js -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
-
-<!-- Chessboard.js -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/chessboard-js/1.0.0/chessboard-1.0.0.min.js"></script>
-
-
-<!-- =========================================
-     Eigen JavaScript
-     ========================================= -->
-
-<script src="main.js"></script>
-```
+    <!-- Onze eigen code -->
+    <script src="Obsidian.js"></script>
+    <script src="main.js"></script>
 
 </body>
 </html>
