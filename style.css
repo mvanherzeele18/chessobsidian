@@ -664,3 +664,125 @@ h1 {
         font-size: clamp(29px, 11vw, 52px);
     }
 }
+
+/* ========================================
+   LAATSTE ZET
+======================================== */
+
+.square.last-move {
+    box-shadow:
+        inset 0 0 0 5px rgba(189, 169, 109, 0.75);
+}
+
+
+/* ========================================
+   SCHAAK
+======================================== */
+
+.square.in-check {
+    box-shadow:
+        inset 0 0 0 5px rgba(220, 55, 55, 0.95),
+        inset 0 0 25px rgba(220, 55, 55, 0.35);
+}
+
+.square.in-check .piece {
+    filter:
+        drop-shadow(0 0 8px rgba(255, 40, 40, 0.95));
+}
+
+
+/* ========================================
+   OBSIDIAN GEDACHTEN
+======================================== */
+
+.best-moves {
+    display: flex;
+
+    flex-direction: column;
+
+    gap: 7px;
+}
+
+.best-move {
+    display: grid;
+
+    grid-template-columns: 28px 1fr auto;
+
+    align-items: center;
+
+    gap: 8px;
+
+    padding: 9px 10px;
+
+    border-radius: 9px;
+
+    background: #141917;
+
+    border: 1px solid #202622;
+
+    font-size: 12px;
+}
+
+.best-move-rank {
+    color: #666f69;
+
+    font-family:
+        "SFMono-Regular",
+        Consolas,
+        monospace;
+}
+
+.best-move-name {
+    color: #d8d5ca;
+
+    font-family:
+        "SFMono-Regular",
+        Consolas,
+        monospace;
+
+    font-weight: 600;
+}
+
+.best-move-evaluation {
+    color: #858d87;
+
+    font-family:
+        "SFMono-Regular",
+        Consolas,
+        monospace;
+
+    font-size: 11px;
+}
+
+.best-move:first-child {
+    border-color: #8e7d4e;
+
+    background:
+        linear-gradient(
+            90deg,
+            rgba(189, 169, 109, 0.10),
+            rgba(20, 25, 23, 1)
+        );
+}
+
+.thinking-icon {
+    color: #bda96d;
+
+    font-size: 15px;
+}
+
+
+/* ========================================
+   STATUS SCHAAK
+======================================== */
+
+.status.in-check {
+    color: #e26a6a;
+}
+
+.status.in-check::before {
+    background: #e24b4b;
+
+    box-shadow:
+        0 0 12px rgba(225, 60, 60, 0.7);
+}
