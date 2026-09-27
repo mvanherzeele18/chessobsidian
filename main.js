@@ -425,7 +425,7 @@ function updateStatus() {
     }
 
 
-    if (chess.isCheckmate()) {
+    if (chess.in_checkmate()) {
 
         const winner =
             chess.turn() === "w"
@@ -443,10 +443,10 @@ function updateStatus() {
 
 
     if (
-        chess.isDraw() ||
-        chess.isStalemate() ||
-        chess.isThreefoldRepetition() ||
-        chess.isInsufficientMaterial()
+        chess.in_draw() ||
+        chess.in_stalemate() ||
+        chess.in_threefold_repetition() ||
+        chess.insufficient_material()
     ) {
 
         statusElement.textContent = "Remise";
@@ -494,12 +494,11 @@ function updateStatus() {
 // ============================================
 
 function isGameOver() {
-
     return (
-        chess.isGameOver() ||
-        chess.isCheckmate() ||
-        chess.isDraw() ||
-        chess.isStalemate()
+        chess.game_over() ||
+        chess.in_checkmate() ||
+        chess.in_draw() ||
+        chess.in_stalemate()
     );
 }
 
