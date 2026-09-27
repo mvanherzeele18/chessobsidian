@@ -4,51 +4,94 @@
 
 const Obsidian = {
 
-    // Begin met 3.
-    // Later kunnen we dit naar 5 zetten.
+    // ========================================
+    // INSTELLINGEN
+    // ========================================
+
     SEARCH_DEPTH: 3,
 
 
-    // Waarde van de stukken
+    // ========================================
+    // STUKWAARDES
+    // ========================================
+
     PIECE_VALUES: {
+
         p: 100,
         n: 320,
         b: 330,
         r: 500,
         q: 900,
         k: 20000
+
     },
 
 
     // ========================================
-    // PUBLIC FUNCTION
+    // BESTE ZET
     // ========================================
 
     getBestMove(chess) {
 
-        const botColor = chess.turn();
+        const topMoves =
+            this.getTopMoves(
+                chess,
+                1
+            );
 
-        const moves = chess.moves({
-            verbose: true
-        });
 
-        if (moves.length === 0) {
+        if (
+            !topMoves ||
+            topMoves.length === 0
+        ) {
             return null;
         }
 
 
-        let bestMove = moves[0];
+        return topMoves[0].move;
+    },
 
-        let bestScore = -Infinity;
+
+    // ========================================
+    // TOP MOVES
+    // ========================================
+
+    getTopMoves(
+        chess,
+        amount = 3
+    ) {
+
+        const botColor =
+            chess.turn();
 
 
-        // Zetvolgorde verbeteren.
-        // Sterke tactische zetten eerst bekijken.
+        const moves =
+            chess.moves({
+                verbose: true
+            });
+
+
+        if (moves.length === 0) {
+            return [];
+        }
+
+
+        const results = [];
+
+
+        // Eerst tactisch interessante zetten
+        // bekijken. Dit maakt alpha-beta
+        // veel effectiever.
         const orderedMoves =
-            this.orderMoves(chess, moves);
+            this.orderMoves(
+                chess,
+                moves
+            );
 
 
-        for (const move of orderedMoves) {
+        for (
+            const move of orderedMoves
+        ) {
 
             chess.move({
                 from: move.from,
@@ -57,32 +100,42 @@ const Obsidian = {
             });
 
 
-            const score = this.minimax(
-                chess,
-                this.SEARCH_DEPTH - 1,
-                -Infinity,
-                Infinity,
-                botColor
-            );
+            const score =
+                this.minimax(
+                    chess,
+                    this.SEARCH_DEPTH - 1,
+                    -Infinity,
+                    Infinity,
+                    botColor
+                );
 
 
             chess.undo();
 
 
-            if (score > bestScore) {
-
-                bestScore = score;
-                bestMove = move;
-            }
+            results.push({
+                move: move,
+                score: score
+            });
         }
 
 
-        return bestMove;
+        // Hoogste score eerst.
+        results.sort(
+            (a, b) =>
+                b.score - a.score
+        );
+
+
+        return results.slice(
+            0,
+            amount
+        );
     },
 
 
     // ========================================
-    // MINIMAX + ALPHA BETA
+    // MINIMAX
     // ========================================
 
     minimax(
@@ -93,8 +146,45 @@ const Obsidian = {
         botColor
     ) {
 
-        // Einde van de zoekdiepte
-        if (depth === 0) {
+        // ------------------------------------
+        // SCHAAKMAT
+        // ------------------------------------
+
+        if (chess.in_checkmate()) {
+
+            if (
+                chess.turn() === botColor
+            ) {
+
+                return -1000000;
+            }
+
+
+            return 1000000;
+        }
+
+
+        // ------------------------------------
+        // REMISE
+        // ------------------------------------
+
+        if (
+            chess.in_draw() ||
+            chess.in_stalemate() ||
+            chess.in_threefold_repetition() ||
+            chess.insufficient_material()
+        ) {
+
+            return 0;
+        }
+
+
+        // ------------------------------------
+        // LEAF
+        // ------------------------------------
+
+        if (depth <= 0) {
+
             return this.evaluate(
                 chess,
                 botColor
@@ -102,38 +192,17 @@ const Obsidian = {
         }
 
 
-        // Schaakmat
-        if (chess.in_checkmate()) {
-
-            // De speler die nu aan zet is,
-            // staat schaakmat.
-
-            if (chess.turn() === botColor) {
-                return -1000000;
-            }
-
-            return 1000000;
-        }
-
-
-        // Remise
-        if (
-            chess.in_draw() ||
-            chess.in_stalemate() ||
-            chess.in_threefold_repetition() ||
-            chess.insufficient_material()
-        ) {
-            return 0;
-        }
-
-
-        const moves = chess.moves({
-            verbose: true
-        });
+        const moves =
+            chess.moves({
+                verbose: true
+            });
 
 
         const orderedMoves =
-            this.orderMoves(chess, moves);
+            this.orderMoves(
+                chess,
+                moves
+            );
 
 
         const maximizing =
@@ -141,15 +210,18 @@ const Obsidian = {
 
 
         // ====================================
-        // MAXIMIZING
+        // MAX
         // ====================================
 
         if (maximizing) {
 
-            let bestScore = -Infinity;
+            let bestScore =
+                -Infinity;
 
 
-            for (const move of orderedMoves) {
+            for (
+                const move of orderedMoves
+            ) {
 
                 chess.move({
                     from: move.from,
@@ -158,26 +230,36 @@ const Obsidian = {
                 });
 
 
-                const score = this.minimax(
-                    chess,
-                    depth - 1,
-                    alpha,
-                    beta,
-                    botColor
-                );
+                const score =
+                    this.minimax(
+                        chess,
+                        depth - 1,
+                        alpha,
+                        beta,
+                        botColor
+                    );
 
 
                 chess.undo();
 
 
                 bestScore =
-                    Math.max(bestScore, score);
+                    Math.max(
+                        bestScore,
+                        score
+                    );
+
 
                 alpha =
-                    Math.max(alpha, score);
+                    Math.max(
+                        alpha,
+                        score
+                    );
 
 
-                if (beta <= alpha) {
+                if (
+                    beta <= alpha
+                ) {
                     break;
                 }
             }
@@ -188,13 +270,16 @@ const Obsidian = {
 
 
         // ====================================
-        // MINIMIZING
+        // MIN
         // ====================================
 
-        let bestScore = Infinity;
+        let bestScore =
+            Infinity;
 
 
-        for (const move of orderedMoves) {
+        for (
+            const move of orderedMoves
+        ) {
 
             chess.move({
                 from: move.from,
@@ -203,26 +288,36 @@ const Obsidian = {
             });
 
 
-            const score = this.minimax(
-                chess,
-                depth - 1,
-                alpha,
-                beta,
-                botColor
-            );
+            const score =
+                this.minimax(
+                    chess,
+                    depth - 1,
+                    alpha,
+                    beta,
+                    botColor
+                );
 
 
             chess.undo();
 
 
             bestScore =
-                Math.min(bestScore, score);
+                Math.min(
+                    bestScore,
+                    score
+                );
+
 
             beta =
-                Math.min(beta, score);
+                Math.min(
+                    beta,
+                    score
+                );
 
 
-            if (beta <= alpha) {
+            if (
+                beta <= alpha
+            ) {
                 break;
             }
         }
@@ -233,15 +328,18 @@ const Obsidian = {
 
 
     // ========================================
-    // BOARD EVALUATION
+    // POSITION EVALUATION
     // ========================================
 
-    evaluate(chess, botColor) {
-
-        const board = chess.board();
+    evaluate(
+        chess,
+        botColor
+    ) {
 
         const opponent =
-            botColor === "w" ? "b" : "w";
+            botColor === "w"
+                ? "b"
+                : "w";
 
 
         let score = 0;
@@ -251,104 +349,85 @@ const Obsidian = {
         // 1. MATERIAAL
         // ------------------------------------
 
-        for (const row of board) {
-
-            for (const piece of row) {
-
-                if (!piece) {
-                    continue;
-                }
-
-
-                const value =
-                    this.PIECE_VALUES[piece.type];
-
-
-                if (piece.color === botColor) {
-                    score += value;
-                } else {
-                    score -= value;
-                }
-            }
-        }
+        score +=
+            this.evaluateMaterial(
+                chess,
+                botColor
+            );
 
 
         // ------------------------------------
         // 2. KONINGVEILIGHEID
         // ------------------------------------
 
+        score +=
+            this.evaluateKingSafety(
+                chess,
+                botColor
+            );
+
+
+        // ------------------------------------
+        // 3. VERDEDIGING
+        // ------------------------------------
+
+        score +=
+            this.evaluateDefense(
+                chess,
+                botColor
+            );
+
+
+        // ------------------------------------
+        // 4. CENTRUM
+        // ------------------------------------
+
+        score +=
+            this.evaluateCenter(
+                chess,
+                botColor
+            );
+
+
+        // ------------------------------------
+        // 5. MOBILITEIT
+        // ------------------------------------
+
+        score +=
+            this.evaluateMobility(
+                chess,
+                botColor
+            );
+
+
+        // ------------------------------------
+        // 6. AANVAL
+        // ------------------------------------
+
+        score +=
+            this.evaluateAttack(
+                chess,
+                botColor
+            );
+
+
+        // ------------------------------------
+        // 7. SCHAAK
+        // ------------------------------------
+
         if (chess.in_check()) {
 
-            if (chess.turn() === botColor) {
+            if (
+                chess.turn() === botColor
+            ) {
 
-                // Obsidian staat schaak.
                 score -= 120;
 
             } else {
 
-                // Tegenstander staat schaak.
                 score += 120;
             }
         }
-
-
-        // ------------------------------------
-        // 3. MOBILITEIT
-        // ------------------------------------
-
-        const currentTurn = chess.turn();
-
-        const legalMoves =
-            chess.moves({
-                verbose: true
-            });
-
-
-        let mobility =
-            legalMoves.length;
-
-
-        /*
-         * Mobiliteit is nuttig, maar niet enorm
-         * belangrijk. Obsidian moet geen
-         * agressieve "move spammer" worden.
-         */
-
-        if (currentTurn === botColor) {
-            score += mobility * 3;
-        } else {
-            score -= mobility * 3;
-        }
-
-
-        // ------------------------------------
-        // 4. STUKKEN IN HET CENTRUM
-        // ------------------------------------
-
-        score += this.evaluateCenter(
-            chess,
-            botColor
-        );
-
-
-        // ------------------------------------
-        // 5. VERDEDIGING
-        // ------------------------------------
-
-        score += this.evaluateDefense(
-            chess,
-            botColor
-        );
-
-
-        // ------------------------------------
-        // 6. AANVALSPOTENTIE
-        // ------------------------------------
-
-        score += this.evaluateAttack(
-            chess,
-            botColor
-        );
 
 
         return score;
@@ -356,17 +435,374 @@ const Obsidian = {
 
 
     // ========================================
-    // CENTER
+    // MATERIAL
     // ========================================
 
-    evaluateCenter(chess, botColor) {
-
-        const board = chess.board();
+    evaluateMaterial(
+        chess,
+        botColor
+    ) {
 
         let score = 0;
 
 
-        const centerSquares = [
+        const board =
+            chess.board();
+
+
+        for (
+            const row of board
+        ) {
+
+            for (
+                const piece of row
+            ) {
+
+                if (!piece) {
+                    continue;
+                }
+
+
+                const value =
+                    this.PIECE_VALUES[
+                        piece.type
+                    ];
+
+
+                if (
+                    piece.color === botColor
+                ) {
+
+                    score += value;
+
+                } else {
+
+                    score -= value;
+                }
+            }
+        }
+
+
+        return score;
+    },
+
+
+    // ========================================
+    // KING SAFETY
+    // ========================================
+
+    evaluateKingSafety(
+        chess,
+        botColor
+    ) {
+
+        const board =
+            chess.board();
+
+
+        let score = 0;
+
+
+        let king = null;
+
+
+        // Zoek eigen koning.
+        for (
+            let row = 0;
+            row < 8;
+            row++
+        ) {
+
+            for (
+                let col = 0;
+                col < 8;
+                col++
+            ) {
+
+                const piece =
+                    board[row][col];
+
+
+                if (
+                    piece &&
+                    piece.type === "k" &&
+                    piece.color === botColor
+                ) {
+
+                    king = {
+                        row: row,
+                        col: col
+                    };
+
+                    break;
+                }
+            }
+
+
+            if (king) {
+                break;
+            }
+        }
+
+
+        if (!king) {
+            return 0;
+        }
+
+
+        // ------------------------------------
+        // Koning staat niet schaak
+        // ------------------------------------
+
+        if (
+            chess.turn() !== botColor ||
+            !chess.in_check()
+        ) {
+
+            score += 10;
+        }
+
+
+        // ------------------------------------
+        // Eigen pionnen rond koning
+        // ------------------------------------
+
+        const direction =
+            botColor === "w"
+                ? -1
+                : 1;
+
+
+        const pawnRow =
+            king.row + direction;
+
+
+        if (
+            pawnRow >= 0 &&
+            pawnRow < 8
+        ) {
+
+            for (
+                let col =
+                    king.col - 1;
+
+                col <= king.col + 1;
+
+                col++
+            ) {
+
+                if (
+                    col < 0 ||
+                    col > 7
+                ) {
+                    continue;
+                }
+
+
+                const piece =
+                    board[pawnRow][col];
+
+
+                if (
+                    piece &&
+                    piece.color === botColor &&
+                    piece.type === "p"
+                ) {
+
+                    score += 18;
+                }
+            }
+        }
+
+
+        return score;
+    },
+
+
+    // ========================================
+    // DEFENSE
+    // ========================================
+
+    evaluateDefense(
+        chess,
+        botColor
+    ) {
+
+        const board =
+            chess.board();
+
+
+        let score = 0;
+
+
+        /*
+         * We geven bonus voor stukken die
+         * door andere stukken ondersteund
+         * worden.
+         */
+
+        for (
+            let row = 0;
+            row < 8;
+            row++
+        ) {
+
+            for (
+                let col = 0;
+                col < 8;
+                col++
+            ) {
+
+                const piece =
+                    board[row][col];
+
+
+                if (
+                    !piece ||
+                    piece.color !== botColor
+                ) {
+                    continue;
+                }
+
+
+                const square =
+                    this.toSquare(
+                        row,
+                        col
+                    );
+
+
+                const defenders =
+                    this.countDefenders(
+                        chess,
+                        square,
+                        botColor
+                    );
+
+
+                if (defenders > 0) {
+
+                    // Vooral waardevolle stukken
+                    // wil Obsidian beschermd zien.
+                    const value =
+                        this.PIECE_VALUES[
+                            piece.type
+                        ];
+
+
+                    if (value >= 500) {
+
+                        score +=
+                            defenders * 10;
+
+                    } else {
+
+                        score +=
+                            defenders * 4;
+                    }
+                }
+            }
+        }
+
+
+        return score;
+    },
+
+
+    // ========================================
+    // COUNT DEFENDERS
+    // ========================================
+
+    countDefenders(
+        chess,
+        square,
+        color
+    ) {
+
+        /*
+         * chess.js geeft geen directe
+         * "defenders of square"-functie.
+         *
+         * Daarom testen we welke eigen stukken
+         * naar dat veld zouden kunnen bewegen.
+         */
+
+        let count = 0;
+
+
+        const board =
+            chess.board();
+
+
+        for (
+            let row = 0;
+            row < 8;
+            row++
+        ) {
+
+            for (
+                let col = 0;
+                col < 8;
+                col++
+            ) {
+
+                const piece =
+                    board[row][col];
+
+
+                if (
+                    !piece ||
+                    piece.color !== color
+                ) {
+                    continue;
+                }
+
+
+                const from =
+                    this.toSquare(
+                        row,
+                        col
+                    );
+
+
+                const moves =
+                    chess.moves({
+                        square: from,
+                        verbose: true
+                    });
+
+
+                for (
+                    const move of moves
+                ) {
+
+                    if (
+                        move.to === square
+                    ) {
+
+                        count++;
+
+                        break;
+                    }
+                }
+            }
+        }
+
+
+        return count;
+    },
+
+
+    // ========================================
+    // CENTER CONTROL
+    // ========================================
+
+    evaluateCenter(
+        chess,
+        botColor
+    ) {
+
+        const center = [
             "d4",
             "e4",
             "d5",
@@ -374,17 +810,15 @@ const Obsidian = {
         ];
 
 
-        for (const square of centerSquares) {
+        let score = 0;
 
-            const file =
-                square.charCodeAt(0) - 97;
 
-            const rank =
-                8 - parseInt(square[1]);
-
+        for (
+            const square of center
+        ) {
 
             const piece =
-                board[rank][file];
+                chess.get(square);
 
 
             if (!piece) {
@@ -392,10 +826,10 @@ const Obsidian = {
             }
 
 
-            if (piece.color === botColor) {
+            if (
+                piece.color === botColor
+            ) {
 
-                // Centrumcontrole is goed,
-                // maar krijgt geen enorme bonus.
                 score += 12;
 
             } else {
@@ -410,119 +844,32 @@ const Obsidian = {
 
 
     // ========================================
-    // DEFENSE
+    // MOBILITY
     // ========================================
 
-    evaluateDefense(chess, botColor) {
-
-        let score = 0;
-
-
-        /*
-         * Obsidian krijgt een bonus als zijn
-         * koning veilig achter pionnen staat.
-         */
-
-        const board = chess.board();
-
-
-        let kingSquare = null;
-
-
-        for (let row = 0; row < 8; row++) {
-
-            for (let col = 0; col < 8; col++) {
-
-                const piece = board[row][col];
-
-                if (
-                    piece &&
-                    piece.type === "k" &&
-                    piece.color === botColor
-                ) {
-
-                    kingSquare = {
-                        row,
-                        col
-                    };
-
-                    break;
-                }
-            }
-
-            if (kingSquare) {
-                break;
-            }
-        }
-
-
-        if (kingSquare) {
-
-            const direction =
-                botColor === "w" ? -1 : 1;
-
-
-            const pawnRow =
-                kingSquare.row + direction;
-
-
-            if (
-                pawnRow >= 0 &&
-                pawnRow < 8
-            ) {
-
-                for (
-                    let col = kingSquare.col - 1;
-                    col <= kingSquare.col + 1;
-                    col++
-                ) {
-
-                    if (
-                        col < 0 ||
-                        col > 7
-                    ) {
-                        continue;
-                    }
-
-
-                    const piece =
-                        board[pawnRow][col];
-
-
-                    if (
-                        piece &&
-                        piece.color === botColor &&
-                        piece.type === "p"
-                    ) {
-
-                        score += 15;
-                    }
-                }
-            }
-        }
-
+    evaluateMobility(
+        chess,
+        botColor
+    ) {
 
         /*
-         * Niet zomaar stukken weggeven.
-         *
-         * We geven extra waarde aan materiaal
-         * wanneer Obsidian nog relatief veel
-         * stukken heeft.
+         * Mobiliteit is positief,
+         * maar bewust niet heel zwaar.
          */
 
-        const ownPieces =
-            this.countPieces(
-                chess,
-                botColor
-            );
+        const moves =
+            chess.moves().length;
 
 
-        if (ownPieces >= 10) {
-            score += 8;
+        if (
+            chess.turn() === botColor
+        ) {
+
+            return moves * 3;
         }
 
 
-        return score;
+        return -moves * 3;
     },
 
 
@@ -530,84 +877,71 @@ const Obsidian = {
     // ATTACK
     // ========================================
 
-    evaluateAttack(chess, botColor) {
+    evaluateAttack(
+        chess,
+        botColor
+    ) {
 
         let score = 0;
 
 
-        const moves = chess.moves({
-            verbose: true
-        });
+        const moves =
+            chess.moves({
+                verbose: true
+            });
 
 
-        for (const move of moves) {
+        for (
+            const move of moves
+        ) {
+
+            if (!move.captured) {
+                continue;
+            }
+
+
+            const capturedValue =
+                this.PIECE_VALUES[
+                    move.captured
+                ] || 0;
+
+
+            const attackerValue =
+                this.PIECE_VALUES[
+                    move.piece
+                ] || 0;
+
 
             /*
-             * Een aanval wordt pas echt interessant
-             * wanneer er concreet materiaal te winnen is.
+             * Een stuk slaan is goed.
              */
-
-            if (move.captured) {
-
-                const capturedValue =
-                    this.PIECE_VALUES[
-                        move.captured
-                    ] || 0;
+            score +=
+                capturedValue * 0.04;
 
 
-                const attackerValue =
-                    this.PIECE_VALUES[
-                        move.piece
-                    ] || 0;
+            /*
+             * Grote stukken slaan krijgt
+             * een extra bonus.
+             */
+            if (
+                capturedValue >= 500
+            ) {
 
-
-                // Een goedkope aanvaller die een
-                // duur stuk kan slaan is interessant.
-                score +=
-                    capturedValue * 0.04;
-
-
-                // Dame/toren winnen is extra interessant.
-                if (
-                    capturedValue >= 500
-                ) {
-                    score += 15;
-                }
-
-
-                // Een offer met een duur stuk
-                // wordt niet automatisch beloond.
-                if (
-                    attackerValue >
-                    capturedValue
-                ) {
-                    score -= 10;
-                }
+                score += 15;
             }
-        }
 
 
-        /*
-         * Als de tegenstander weinig verdediging
-         * heeft, krijgt Obsidian wat extra
-         * aanvalspotentieel.
-         */
+            /*
+             * Een duur stuk voor een goedkoper
+             * stuk opofferen wordt ontmoedigd.
+             */
+            if (
+                attackerValue >
+                capturedValue
+            ) {
 
-        const opponent =
-            botColor === "w"
-                ? "b"
-                : "w";
-
-
-        const opponentMoves =
-            this.countLegalMovesFor(
-                chess,
-                opponent
-            );
-
-
-        if (opponentMoves <= 10) {
-            score += 8;
+                score -= 10;
+            }
         }
 
 
@@ -616,146 +950,149 @@ const Obsidian = {
 
 
     // ========================================
-    // COUNT PIECES
-    // ========================================
-
-    countPieces(chess, color) {
-
-        let count = 0;
-
-        const board = chess.board();
-
-
-        for (const row of board) {
-
-            for (const piece of row) {
-
-                if (
-                    piece &&
-                    piece.color === color
-                ) {
-                    count++;
-                }
-            }
-        }
-
-
-        return count;
-    },
-
-
-    // ========================================
-    // COUNT LEGAL MOVES
-    // ========================================
-
-    countLegalMovesFor(chess, color) {
-
-        if (chess.turn() === color) {
-
-            return chess.moves().length;
-        }
-
-
-        /*
-         * We kunnen hier niet zomaar de beurt
-         * veranderen zonder de positie te veranderen.
-         *
-         * Daarom gebruiken we voor de evaluatie
-         * alleen de huidige legal moves.
-         */
-
-        return chess.moves().length;
-    },
-
-
-    // ========================================
     // MOVE ORDERING
     // ========================================
 
-    orderMoves(chess, moves) {
+    orderMoves(
+        chess,
+        moves
+    ) {
 
-        return moves.sort((a, b) => {
+        /*
+         * BELANGRIJK:
+         *
+         * We gebruiken hier geen ingewikkelde
+         * evaluatie. Dit is alleen om sterke
+         * kandidaten eerst te bekijken.
+         */
 
-            let scoreA = 0;
-            let scoreB = 0;
+        return moves.sort(
+            (a, b) => {
+
+                let scoreA = 0;
+                let scoreB = 0;
 
 
-            // Captures eerst
-            if (a.captured) {
+                // --------------------------------
+                // CAPTURES
+                // --------------------------------
 
-                scoreA +=
-                    this.PIECE_VALUES[
-                        a.captured
-                    ] || 0;
+                if (a.captured) {
+
+                    scoreA +=
+                        (
+                            this.PIECE_VALUES[
+                                a.captured
+                            ] || 0
+                        ) * 10;
+                }
+
+
+                if (b.captured) {
+
+                    scoreB +=
+                        (
+                            this.PIECE_VALUES[
+                                b.captured
+                            ] || 0
+                        ) * 10;
+                }
+
+
+                // --------------------------------
+                // PROMOTION
+                // --------------------------------
+
+                if (a.promotion) {
+                    scoreA += 8000;
+                }
+
+
+                if (b.promotion) {
+                    scoreB += 8000;
+                }
+
+
+                // --------------------------------
+                // CHECK
+                // --------------------------------
+
+                if (
+                    this.moveGivesCheck(
+                        chess,
+                        a
+                    )
+                ) {
+
+                    scoreA += 5000;
+                }
+
+
+                if (
+                    this.moveGivesCheck(
+                        chess,
+                        b
+                    )
+                ) {
+
+                    scoreB += 5000;
+                }
+
+
+                return scoreB - scoreA;
             }
-
-
-            if (b.captured) {
-
-                scoreB +=
-                    this.PIECE_VALUES[
-                        b.captured
-                    ] || 0;
-            }
-
-
-            // Promotie is zeer belangrijk
-            if (a.promotion) {
-                scoreA += 800;
-            }
-
-
-            if (b.promotion) {
-                scoreB += 800;
-            }
-
-
-            // Checks krijgen voorrang
-            const resultA =
-                this.testMove(chess, a);
-
-            const resultB =
-                this.testMove(chess, b);
-
-
-            if (resultA.check) {
-                scoreA += 500;
-            }
-
-
-            if (resultB.check) {
-                scoreB += 500;
-            }
-
-
-            return scoreB - scoreA;
-        });
+        );
     },
 
 
     // ========================================
-    // TEST MOVE
+    // MOVE GIVES CHECK
     // ========================================
 
-    testMove(chess, move) {
+    moveGivesCheck(
+        chess,
+        move
+    ) {
 
         chess.move({
             from: move.from,
             to: move.to,
-            promotion: move.promotion || "q"
+            promotion:
+                move.promotion || "q"
         });
 
 
-        const result = {
-            check: chess.in_check(),
-            mate: chess.in_checkmate()
-        };
+        const givesCheck =
+            chess.in_check();
 
 
         chess.undo();
 
 
-        return result;
+        return givesCheck;
+    },
+
+
+    // ========================================
+    // COORDINATES
+    // ========================================
+
+    toSquare(
+        row,
+        col
+    ) {
+
+        const file =
+            String.fromCharCode(
+                97 + col
+            );
+
+
+        const rank =
+            8 - row;
+
+
+        return `${file}${rank}`;
     }
 
 };
