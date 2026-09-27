@@ -1,42 +1,158 @@
 <!DOCTYPE html>
+
 <html lang="nl">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Chess Obsidian</title>
+    <meta name="theme-color" content="#0b0d10">
 
-    <!-- Eigen CSS -->
-    <link rel="stylesheet" href="style.css">
+```
+<title>Chess Obsidian</title>
 
-    <!-- Chessboard CSS -->
-    <link rel="stylesheet"
-          href="https://cdnjs.cloudflare.com/ajax/libs/chessboard-js/1.0.0/chessboard.min.css">
+<!-- Eigen CSS -->
+<link rel="stylesheet" href="style.css">
+
+<!-- Chessboard.js CSS -->
+<link
+    rel="stylesheet"
+    href="https://cdnjs.cloudflare.com/ajax/libs/chessboard-js/1.0.0/chessboard-1.0.0.min.css"
+>
+```
+
 </head>
+
 <body>
 
-    <h1>♟️ Obsidian</h1>
+```
+<main class="app">
 
-    <div class="controls">
-        <label for="colorSelect">Jouw kleur:</label>
+    <!-- Header -->
+    <header class="topbar">
+        <div>
+            <p class="eyebrow">CHESS ENGINE</p>
 
-        <select id="colorSelect">
-            <option value="white">Wit</option>
-            <option value="black">Zwart</option>
-            <option value="random">Random</option>
-        </select>
+            <h1>
+                <span class="logo">♟</span>
+                Obsidian
+            </h1>
 
-        <button id="startBtn">Nieuw spel</button>
-    </div>
+            <p class="subtitle">
+                Speel tegen je eigen chessbot.
+            </p>
+        </div>
 
-    <div id="board" style="width: 500px;"></div>
+        <div class="status" id="status">
+            <span class="status-dot"></span>
+            Klaar om te spelen
+        </div>
+    </header>
 
-    <!-- Libraries -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
-    https://cdnjs.cloudflare.com/ajax/libs/chessboard-js/1.0.0/chessboard-1.0.0.min.jsscript>
 
-    <!-- Eigen scripts -->
-    <script src="Obsidian.js"></script>
-    <script src="main.js"></script>
+    <!-- Game -->
+    <section class="game-layout">
+
+        <!-- Chessboard -->
+        <div class="board-panel">
+            <div id="board" aria-label="Schaakbord"></div>
+        </div>
+
+
+        <!-- Sidebar -->
+        <aside class="side-panel">
+
+            <!-- New game -->
+            <div class="card">
+
+                <h2>Nieuw spel</h2>
+
+                <label for="colorSelect">
+                    Jouw kleur
+                </label>
+
+                <select id="colorSelect">
+                    <option value="white">Wit</option>
+                    <option value="black">Zwart</option>
+                    <option value="random">Random</option>
+                </select>
+
+                <button
+                    id="startBtn"
+                    class="primary"
+                    type="button"
+                >
+                    Nieuw spel
+                </button>
+
+            </div>
+
+
+            <!-- Moves -->
+            <div class="card">
+
+                <div class="card-heading">
+
+                    <h2>Zetten</h2>
+
+                    <span id="moveCount">
+                        0
+                    </span>
+
+                </div>
+
+                <div
+                    id="moves"
+                    class="moves"
+                    aria-live="polite"
+                >
+                    <span class="empty">
+                        Nog geen zetten.
+                    </span>
+                </div>
+
+            </div>
+
+
+            <!-- Information -->
+            <div class="card info">
+
+                <h2>Obsidian</h2>
+
+                <p>
+                    Speel schaak tegen Obsidian.
+                    De chess engine kan later worden
+                    uitgebreid met verschillende
+                    moeilijkheidsniveaus en evaluaties.
+                </p>
+
+            </div>
+
+        </aside>
+
+    </section>
+
+</main>
+
+
+<!-- =========================================
+     Libraries
+     ========================================= -->
+
+<!-- jQuery -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.7.1/jquery.min.js"></script>
+
+<!-- Chess.js -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
+
+<!-- Chessboard.js -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/chessboard-js/1.0.0/chessboard-1.0.0.min.js"></script>
+
+
+<!-- =========================================
+     Eigen JavaScript
+     ========================================= -->
+
+<script src="main.js"></script>
+```
 
 </body>
 </html>
