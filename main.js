@@ -1,295 +1,594 @@
-const game = new Chess();
+// ============================================
+// OBSIDIAN CHESS - MAIN
+// ============================================
 
-let board = null;
-let playerColor = "w";
-let botColor = "b";
-let thinking = false;
+let chess;
+let playerColor = null;
+let obsidianColor = null;
 
-const colorSelect = document.getElementById("colorSelect");
-const startBtn = document.getElementById("startBtn");
+let selectedSquare = null;
+let gameStarted = false;
+let obsidianThinking = false;
+
+
+// Unicode schaakstukken
+const PIECES = {
+    w: {
+        k: "♔",
+        q: "♕",
+        r: "♖",
+        b: "♗",
+        n: "♘",
+        p: "♙"
+    },
+
+    b: {
+        k: "♚",
+        q: "♛",
+        r: "♜",
+        b: "♝",
+        n: "♞",
+        p: "♟"
+    }
+};
+
+
+// HTML elementen
+const setup = document.getElementById("setup");
+const gameElement = document.getElementById("game");
+
+const boardElement = document.getElementById("board");
+
+const statusElement = document.getElementById("status");
+const gameMessageElement = document.getElementById("gameMessage");
+
 const movesElement = document.getElementById("moves");
 const moveCountElement = document.getElementById("moveCount");
-const statusElement = document.querySelector(".status");
 
-function getRandomColor() {
-    return Math.random() < 0.5 ? "w" : "b";
+const whiteButton = document.getElementById("whiteBtn");
+const blackButton = document.getElementById("blackBtn");
+const newGameButton = document.getElementById("newGameBtn");
+
+
+// ============================================
+// START
+// ============================================
+
+whiteButton.addEventListener("click", () => {
+    startGame("w");
+});
+
+blackButton.addEventListener("click", () => {
+    startGame("b");
+});
+
+newGameButton.addEventListener("click", () => {
+    resetToSetup();
+});
+
+
+// ============================================
+// START GAME
+// ============================================
+
+function startGame(color) {
+
+    playerColor = color;
+    obsidianColor = color === "w" ? "b" : "w";
+
+    chess = new Chess();
+
+    selectedSquare = null;
+    gameStarted = true;
+    obsidianThinking = false;
+
+    setup.classList.add("hidden");
+    gameElement.classList.remove("hidden");
+
+    drawBoard();
+    updateMoves();
+    updateStatus();
+
+    // Als de speler zwart heeft gekozen,
+    // mag Obsidian beginnen.
+    if (obsidianColor === "w") {
+        setTimeout(makeObsidianMove, 500);
+    }
 }
 
-function startGame() {
-    game.reset();
 
-    const selected = colorSelect.value;
+// ============================================
+// DRAW BOARD
+// ============================================
 
-    if (selected === "random") {
-        playerColor = getRandomColor();
-    } else {
-        playerColor = selected === "white" ? "w" : "b";
+function drawBoard() {
+
+    boardElement.innerHTML = "";
+
+    const board = chess.board();
+
+    /*
+        chess.board() geeft rijen van 8 tot 1 terug.
+
+        Als speler wit is:
+        8 → 1
+        a → h
+
+        Als speler zwart is:
+        1 → 8
+        h → a
+    */
+
+    let rows = [...Array(8).keys()];
+
+    if (playerColor === "b") {
+        rows.reverse();
     }
 
-    botColor = playerColor === "w" ? "b" : "w";
+    let columns = [...Array(8).keys()];
 
-    const config = {
-        draggable: true,
-        position: "start",
-        orientation: playerColor === "w" ? "white" : "black",
+    if (playerColor === "b") {
+        columns.reverse();
+    }
 
-        onDragStart: function (source, piece) {
-            if (thinking) return false;
 
-            // Alleen eigen stukken mogen verplaatst worden
-            if (game.game_over()) return false;
+    for (const rowIndex of rows) {
 
-            if (game.turn() !== playerColor) return false;
+        for (const columnIndex of columns) {
 
-            if (
-                (game.turn() === "w" && piece.search(/^b/) !== -1) ||
-                (game.turn() === "b" && piece.search(/^w/) !== -1)
-            ) {
-                return false;
+            const piece = board[rowIndex][columnIndex];
+
+            const file = String.fromCharCode(97 + columnIndex);
+            const rank = 8 - rowIndex;
+
+            const squareName = `${file}${rank}`;
+
+            const square = document.createElement("div");
+
+            square.classList.add("square");
+
+            const isLight =
+                (rowIndex + columnIndex) % 2 === 0;
+
+            square.classList.add(
+                isLight ? "light" : "dark"
+            );
+
+            square.dataset.square = squareName;
+
+
+            if (piece) {
+
+                const pieceElement =
+                    document.createElement("span");
+
+                pieceElement.classList.add("piece");
+
+                pieceElement.classList.add(
+                    piece.color === "w"
+                        ? "white"
+                        : "black"
+                );
+
+                pieceElement.textContent =
+                    PIECES[piece.color][piece.type];
+
+                square.appendChild(pieceElement);
             }
 
-            return true;
-        },
 
-        onDrop: function (source, target) {
-            const move = game.move({
-                from: source,
-                to: target,
-                promotion: "q"
-            });
+            square.addEventListener(
+                "click",
+                () => handleSquareClick(squareName)
+            );
 
-            if (move === null) {
-                return "snapback";
-            }
 
-            updateUI();
-
-            if (!game.game_over()) {
-                setTimeout(botMove, 350);
-            }
-        },
-
-        onSnapEnd: function () {
-            board.position(game.fen());
+            boardElement.appendChild(square);
         }
-    };
-
-    if (board) {
-        board.destroy();
     }
 
-    board = Chessboard("board", config);
-
-    updateUI();
-
-    if (botColor === "w") {
-        setTimeout(botMove, 500);
-    }
+    highlightSelectedSquare();
 }
 
-function updateUI() {
-    if (!movesElement || !moveCountElement) return;
 
-    const history = game.history();
+// ============================================
+// SQUARE CLICK
+// ============================================
 
-    movesElement.innerHTML = "";
+function handleSquareClick(square) {
 
-    for (let i = 0; i < history.length; i += 2) {
-        const number = Math.floor(i / 2) + 1;
-        const whiteMove = history[i] || "";
-        const blackMove = history[i + 1] || "";
-
-        const row = document.createElement("div");
-        row.className = "move-row";
-
-        row.innerHTML = `
-            <span>${number}.</span>
-            <strong>${whiteMove}</strong>
-            <strong>${blackMove}</strong>
-        `;
-
-        movesElement.appendChild(row);
-    }
-
-    moveCountElement.textContent = history.length;
-
-    updateStatus();
-}
-
-function updateStatus() {
-    if (!statusElement) return;
-
-    if (game.isCheckmate()) {
-        const winner = game.turn() === "w" ? "Zwart" : "Wit";
-        statusElement.textContent = `${winner} wint`;
+    if (!gameStarted) {
         return;
     }
 
-    if (game.isDraw()) {
-        statusElement.textContent = "Remise";
+    if (obsidianThinking) {
         return;
     }
 
-    if (thinking) {
-        statusElement.textContent = "Obsidian denkt...";
+    // Alleen tijdens onze beurt
+    if (chess.turn() !== playerColor) {
         return;
     }
 
-    if (game.turn() === playerColor) {
-        statusElement.textContent = "Jouw beurt";
-    } else {
-        statusElement.textContent = "Obsidian is aan zet";
-    }
-}
 
-function botMove() {
-    if (game.game_over()) return;
+    // Geen stuk geselecteerd
+    if (!selectedSquare) {
 
-    thinking = true;
-    updateStatus();
+        const piece = chess.get(square);
 
-    setTimeout(() => {
-        const moves = game.moves({ verbose: true });
-
-        if (moves.length === 0) {
-            thinking = false;
-            updateUI();
+        if (!piece) {
             return;
         }
 
-        const bestMove = findBestMove(2);
+        if (piece.color !== playerColor) {
+            return;
+        }
 
-        game.move({
-            from: bestMove.from,
-            to: bestMove.to,
-            promotion: "q"
-        });
+        selectedSquare = square;
 
-        board.position(game.fen());
+        highlightSelectedSquare();
 
-        thinking = false;
-        updateUI();
-    }, 300);
+        return;
+    }
+
+
+    // Opnieuw op hetzelfde stuk klikken
+    if (selectedSquare === square) {
+
+        selectedSquare = null;
+
+        highlightSelectedSquare();
+
+        return;
+    }
+
+
+    // Probeer zet te maken
+    const move = chess.move({
+        from: selectedSquare,
+        to: square,
+
+        // Voor nu altijd promoveren naar dame
+        promotion: "q"
+    });
+
+
+    if (!move) {
+
+        // Misschien heeft de speler op
+        // een ander eigen stuk geklikt.
+        const piece = chess.get(square);
+
+        if (piece && piece.color === playerColor) {
+
+            selectedSquare = square;
+
+            highlightSelectedSquare();
+
+            return;
+        }
+
+        return;
+    }
+
+
+    selectedSquare = null;
+
+    drawBoard();
+    updateMoves();
+    updateStatus();
+
+
+    // Kijk of het spel afgelopen is
+    if (isGameOver()) {
+        return;
+    }
+
+
+    // Obsidian mag nu spelen
+    setTimeout(makeObsidianMove, 350);
 }
 
-function findBestMove(depth) {
-    const moves = game.moves({ verbose: true });
 
-    let bestMove = moves[0];
-    let bestScore = botColor === "w"
-        ? -Infinity
-        : Infinity;
+// ============================================
+// HIGHLIGHT
+// ============================================
 
-    for (const move of moves) {
-        game.move({
+function highlightSelectedSquare() {
+
+    document
+        .querySelectorAll(".square")
+        .forEach(square => {
+
+            square.classList.remove(
+                "selected",
+                "legal",
+                "capture"
+            );
+        });
+
+
+    if (!selectedSquare) {
+        return;
+    }
+
+
+    const selectedElement =
+        document.querySelector(
+            `[data-square="${selectedSquare}"]`
+        );
+
+    if (selectedElement) {
+        selectedElement.classList.add("selected");
+    }
+
+
+    // Haal alle mogelijke zetten op
+    const legalMoves =
+        chess.moves({
+            square: selectedSquare,
+            verbose: true
+        });
+
+
+    legalMoves.forEach(move => {
+
+        const target =
+            document.querySelector(
+                `[data-square="${move.to}"]`
+            );
+
+        if (!target) {
+            return;
+        }
+
+
+        if (move.captured) {
+            target.classList.add("capture");
+        } else {
+            target.classList.add("legal");
+        }
+    });
+}
+
+
+// ============================================
+// OBSIDIAN MOVE
+// ============================================
+
+function makeObsidianMove() {
+
+    if (!gameStarted) {
+        return;
+    }
+
+    if (chess.turn() !== obsidianColor) {
+        return;
+    }
+
+    if (isGameOver()) {
+        return;
+    }
+
+
+    obsidianThinking = true;
+
+    updateStatus();
+
+
+    // Kleine vertraging zodat het niet lijkt
+    // alsof de zet onmiddellijk verschijnt.
+    setTimeout(() => {
+
+        const move = Obsidian.getRandomMove(chess);
+
+
+        if (!move) {
+
+            obsidianThinking = false;
+
+            updateStatus();
+
+            return;
+        }
+
+
+        chess.move({
             from: move.from,
             to: move.to,
             promotion: "q"
         });
 
-        const score = minimax(depth - 1, -Infinity, Infinity);
 
-        game.undo();
+        obsidianThinking = false;
 
-        if (botColor === "w") {
-            if (score > bestScore) {
-                bestScore = score;
-                bestMove = move;
-            }
-        } else {
-            if (score < bestScore) {
-                bestScore = score;
-                bestMove = move;
-            }
-        }
-    }
+        selectedSquare = null;
 
-    return bestMove;
+        drawBoard();
+        updateMoves();
+        updateStatus();
+
+
+    }, 450);
 }
 
-function minimax(depth, alpha, beta) {
-    if (depth === 0 || game.game_over()) {
-        return evaluateBoard();
+
+// ============================================
+// STATUS
+// ============================================
+
+function updateStatus() {
+
+    if (!gameStarted) {
+        statusElement.textContent = "Kies je kleur";
+        return;
     }
 
-    const moves = game.moves({ verbose: true });
 
-    if (game.turn() === "w") {
-        let maxEval = -Infinity;
+    if (chess.isCheckmate()) {
 
-        for (const move of moves) {
-            game.move({
-                from: move.from,
-                to: move.to,
-                promotion: "q"
-            });
+        const winner =
+            chess.turn() === "w"
+                ? "Zwart"
+                : "Wit";
 
-            const evaluation = minimax(depth - 1, alpha, beta);
+        statusElement.textContent =
+            `${winner} wint`;
 
-            game.undo();
+        gameMessageElement.textContent =
+            `${winner} heeft schaakmat gezet.`;
 
-            maxEval = Math.max(maxEval, evaluation);
-            alpha = Math.max(alpha, evaluation);
+        return;
+    }
 
-            if (beta <= alpha) break;
-        }
 
-        return maxEval;
+    if (
+        chess.isDraw() ||
+        chess.isStalemate() ||
+        chess.isThreefoldRepetition() ||
+        chess.isInsufficientMaterial()
+    ) {
+
+        statusElement.textContent = "Remise";
+
+        gameMessageElement.textContent =
+            "Het spel eindigt in remise.";
+
+        return;
+    }
+
+
+    if (obsidianThinking) {
+
+        statusElement.textContent =
+            "Obsidian denkt...";
+
+        gameMessageElement.textContent =
+            "Obsidian kiest een zet.";
+
+        return;
+    }
+
+
+    if (chess.turn() === playerColor) {
+
+        statusElement.textContent =
+            "Jouw beurt";
+
+        gameMessageElement.textContent =
+            "Kies een stuk en maak een zet.";
+
     } else {
-        let minEval = Infinity;
 
-        for (const move of moves) {
-            game.move({
-                from: move.from,
-                to: move.to,
-                promotion: "q"
-            });
+        statusElement.textContent =
+            "Obsidian is aan zet";
 
-            const evaluation = minimax(depth - 1, alpha, beta);
-
-            game.undo();
-
-            minEval = Math.min(minEval, evaluation);
-            beta = Math.min(beta, evaluation);
-
-            if (beta <= alpha) break;
-        }
-
-        return minEval;
+        gameMessageElement.textContent =
+            "Obsidian maakt een zet.";
     }
 }
 
-function evaluateBoard() {
-    const values = {
-        p: 100,
-        n: 320,
-        b: 330,
-        r: 500,
-        q: 900,
-        k: 20000
-    };
 
-    let score = 0;
+// ============================================
+// GAME OVER
+// ============================================
 
-    const boardState = game.board();
+function isGameOver() {
 
-    for (let row of boardState) {
-        for (let piece of row) {
-            if (!piece) continue;
-
-            const value = values[piece.type];
-
-            if (piece.color === "w") {
-                score += value;
-            } else {
-                score -= value;
-            }
-        }
-    }
-
-    return score;
+    return (
+        chess.isGameOver() ||
+        chess.isCheckmate() ||
+        chess.isDraw() ||
+        chess.isStalemate()
+    );
 }
 
-startBtn.addEventListener("click", startGame);
 
-startGame();
+// ============================================
+// MOVE LIST
+// ============================================
+
+function updateMoves() {
+
+    const history = chess.history();
+
+    movesElement.innerHTML = "";
+
+    moveCountElement.textContent =
+        history.length;
+
+
+    if (history.length === 0) {
+
+        movesElement.innerHTML =
+            `<p class="empty-moves">
+                Nog geen zetten.
+            </p>`;
+
+        return;
+    }
+
+
+    for (let i = 0; i < history.length; i += 2) {
+
+        const row =
+            document.createElement("div");
+
+        row.classList.add("move-row");
+
+
+        const number =
+            document.createElement("span");
+
+        number.textContent =
+            `${Math.floor(i / 2) + 1}.`;
+
+
+        const whiteMove =
+            document.createElement("strong");
+
+        whiteMove.textContent =
+            history[i] || "";
+
+
+        const blackMove =
+            document.createElement("strong");
+
+        blackMove.textContent =
+            history[i + 1] || "";
+
+
+        row.appendChild(number);
+        row.appendChild(whiteMove);
+        row.appendChild(blackMove);
+
+        movesElement.appendChild(row);
+    }
+
+
+    // Scroll naar beneden
+    movesElement.scrollTop =
+        movesElement.scrollHeight;
+}
+
+
+// ============================================
+// RESET
+// ============================================
+
+function resetToSetup() {
+
+    gameStarted = false;
+    obsidianThinking = false;
+    selectedSquare = null;
+
+    chess = null;
+
+    gameElement.classList.add("hidden");
+    setup.classList.remove("hidden");
+
+    statusElement.textContent =
+        "Kies je kleur";
+
+    boardElement.innerHTML = "";
+}
