@@ -748,7 +748,7 @@ const Obsidian = {
 
         const result = {
             check: chess.in_check(),
-            mate: chess.isCheckmate()
+            mate: chess.in_Checkmate()
         };
 
 
