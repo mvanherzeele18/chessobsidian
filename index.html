@@ -2,18 +2,22 @@
 <html lang="nl">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Chess Obsidian</title>
 
-    style.css
+    <!-- Eigen CSS -->
+    <link rel="stylesheet" href="style.css">
 
+    <!-- Chessboard CSS -->
     <link rel="stylesheet"
-        href="https://cdnjs.cloudflare.com/ajax/libs/chessboard-js/1.0.0/chessboard.min.css">
+          href="https://cdnjs.cloudflare.com/ajax/libs/chessboard-js/1.0.0/chessboard.min.css">
+</head>
+<body>
 
-    <script> src="https://cdnjs.cloudflare.com </script> <script> src="https://cdnjs.cloudflare.com/ajax/libs/chessboard-js/1.0.0/chessboard-1.0.0.min.js"></script
     <h1>♟️ Obsidian</h1>
 
     <div class="controls">
-        <label>Jouw kleur:</label>
+        <label for="colorSelect">Jouw kleur:</label>
 
         <select id="colorSelect">
             <option value="white">Wit</option>
@@ -24,10 +28,15 @@
         <button id="startBtn">Nieuw spel</button>
     </div>
 
-    <div id="board"></div>
+    <div id="board" style="width: 500px;"></div>
 
-    Obsidian.jsscript>
-    main.jsscript>
+    <!-- Libraries -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
+    https://cdnjs.cloudflare.com/ajax/libs/chessboard-js/1.0.0/chessboard-1.0.0.min.jsscript>
+
+    <!-- Eigen scripts -->
+    <script src="Obsidian.js"></script>
+    <script src="main.js"></script>
 
 </body>
 </html>
