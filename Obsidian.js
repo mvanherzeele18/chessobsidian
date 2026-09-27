@@ -103,7 +103,7 @@ const Obsidian = {
 
 
         // Schaakmat
-        if (chess.isCheckmate()) {
+        if (chess.in_checkmate()) {
 
             // De speler die nu aan zet is,
             // staat schaakmat.
@@ -118,10 +118,10 @@ const Obsidian = {
 
         // Remise
         if (
-            chess.isDraw() ||
-            chess.isStalemate() ||
-            chess.isThreefoldRepetition() ||
-            chess.isInsufficientMaterial()
+            chess.in_draw() ||
+            chess.in_stalemate() ||
+            chess.in_threefold_repetition() ||
+            chess.insufficient_material()
         ) {
             return 0;
         }
