@@ -384,7 +384,7 @@ function makeObsidianMove() {
     // alsof de zet onmiddellijk verschijnt.
     setTimeout(() => {
 
-        const move = Obsidian.getRandomMove(chess);
+        const move = Obsidian.getBestMove(chess);
 
 
         if (!move) {
