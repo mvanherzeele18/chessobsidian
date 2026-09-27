@@ -4,16 +4,22 @@ var Chess=function(r){var u="b",s="w",l=-1,_="p",A="n",S="b",m="r",y="q",p="k",t
 // OBSIDIAN CHESS - MAIN
 // ============================================
 
-let chess;
+let chess = null;
+
 let playerColor = null;
 let obsidianColor = null;
 
 let selectedSquare = null;
+let lastMove = null;
+
 let gameStarted = false;
 let obsidianThinking = false;
 
 
-// Unicode schaakstukken
+// ============================================
+// PIECES
+// ============================================
+
 const PIECES = {
     w: {
         k: "♔",
@@ -35,25 +41,42 @@ const PIECES = {
 };
 
 
-// HTML elementen
+// ============================================
+// HTML ELEMENTS
+// ============================================
+
 const setup = document.getElementById("setup");
 const gameElement = document.getElementById("game");
 
 const boardElement = document.getElementById("board");
 
-const statusElement = document.getElementById("status");
-const gameMessageElement = document.getElementById("gameMessage");
+const statusElement =
+    document.getElementById("status");
 
-const movesElement = document.getElementById("moves");
-const moveCountElement = document.getElementById("moveCount");
+const gameMessageElement =
+    document.getElementById("gameMessage");
 
-const whiteButton = document.getElementById("whiteBtn");
-const blackButton = document.getElementById("blackBtn");
-const newGameButton = document.getElementById("newGameBtn");
+const movesElement =
+    document.getElementById("moves");
+
+const moveCountElement =
+    document.getElementById("moveCount");
+
+const bestMovesElement =
+    document.getElementById("bestMoves");
+
+const whiteButton =
+    document.getElementById("whiteBtn");
+
+const blackButton =
+    document.getElementById("blackBtn");
+
+const newGameButton =
+    document.getElementById("newGameBtn");
 
 
 // ============================================
-// START
+// BUTTONS
 // ============================================
 
 whiteButton.addEventListener("click", () => {
@@ -76,27 +99,36 @@ newGameButton.addEventListener("click", () => {
 function startGame(color) {
 
     playerColor = color;
-    obsidianColor = color === "w" ? "b" : "w";
 
-    // Controleert of Chess een functie/klasse is, of dat de klasse binnen Chess.Chess zit
-    const ChessCtor = typeof Chess === "function" ? Chess : Chess.Chess;
-    chess = new ChessCtor();
-    
+    obsidianColor =
+        color === "w" ? "b" : "w";
+
+    chess = new Chess();
+
     selectedSquare = null;
+    lastMove = null;
+
     gameStarted = true;
     obsidianThinking = false;
+
 
     setup.classList.add("hidden");
     gameElement.classList.remove("hidden");
 
+
     drawBoard();
     updateMoves();
     updateStatus();
+    clearBestMoves();
 
-    // Als de speler zwart heeft gekozen,
-    // mag Obsidian beginnen.
+
+    // Als speler zwart kiest,
+    // begint Obsidian met wit.
     if (obsidianColor === "w") {
-        setTimeout(makeObsidianMove, 500);
+
+        setTimeout(() => {
+            makeObsidianMove();
+        }, 500);
     }
 }
 
@@ -109,29 +141,29 @@ function drawBoard() {
 
     boardElement.innerHTML = "";
 
-    const board = chess.board();
-
-    /*
-        chess.board() geeft rijen van 8 tot 1 terug.
-
-        Als speler wit is:
-        8 → 1
-        a → h
-
-        Als speler zwart is:
-        1 → 8
-        h → a
-    */
-
-    let rows = [...Array(8).keys()];
-
-    if (playerColor === "b") {
-        rows.reverse();
+    if (!chess) {
+        return;
     }
 
-    let columns = [...Array(8).keys()];
 
+    const board = chess.board();
+
+
+    let rows = [
+        0, 1, 2, 3,
+        4, 5, 6, 7
+    ];
+
+    let columns = [
+        0, 1, 2, 3,
+        4, 5, 6, 7
+    ];
+
+
+    // Zwart speelt vanuit de andere kant.
     if (playerColor === "b") {
+
+        rows.reverse();
         columns.reverse();
     }
 
@@ -140,33 +172,76 @@ function drawBoard() {
 
         for (const columnIndex of columns) {
 
-            const piece = board[rowIndex][columnIndex];
+            const piece =
+                board[rowIndex][columnIndex];
 
-            const file = String.fromCharCode(97 + columnIndex);
-            const rank = 8 - rowIndex;
 
-            const squareName = `${file}${rank}`;
+            const file =
+                String.fromCharCode(
+                    97 + columnIndex
+                );
 
-            const square = document.createElement("div");
+            const rank =
+                8 - rowIndex;
+
+
+            const squareName =
+                `${file}${rank}`;
+
+
+            const square =
+                document.createElement("div");
 
             square.classList.add("square");
+
 
             const isLight =
                 (rowIndex + columnIndex) % 2 === 0;
 
+
             square.classList.add(
-                isLight ? "light" : "dark"
+                isLight
+                    ? "light"
+                    : "dark"
             );
 
-            square.dataset.square = squareName;
 
+            square.dataset.square =
+                squareName;
+
+
+            // --------------------------------
+            // LAATSTE ZET
+            // --------------------------------
+
+            if (
+                lastMove &&
+                (
+                    squareName === lastMove.from ||
+                    squareName === lastMove.to
+                )
+            ) {
+
+                square.classList.add(
+                    "last-move"
+                );
+            }
+
+
+            // --------------------------------
+            // STUK
+            // --------------------------------
 
             if (piece) {
 
                 const pieceElement =
                     document.createElement("span");
 
-                pieceElement.classList.add("piece");
+
+                pieceElement.classList.add(
+                    "piece"
+                );
+
 
                 pieceElement.classList.add(
                     piece.color === "w"
@@ -174,29 +249,64 @@ function drawBoard() {
                         : "black"
                 );
 
-                pieceElement.textContent =
-                    PIECES[piece.color][piece.type];
 
-                square.appendChild(pieceElement);
+                pieceElement.textContent =
+                    PIECES[
+                        piece.color
+                    ][
+                        piece.type
+                    ];
+
+
+                // --------------------------------
+                // KONING STAAT SCHAAK
+                // --------------------------------
+
+                if (
+                    piece.type === "k" &&
+                    chess.in_check() &&
+                    piece.color === chess.turn()
+                ) {
+
+                    square.classList.add(
+                        "in-check"
+                    );
+                }
+
+
+                square.appendChild(
+                    pieceElement
+                );
             }
 
 
+            // --------------------------------
+            // CLICK
+            // --------------------------------
+
             square.addEventListener(
                 "click",
-                () => handleSquareClick(squareName)
+                () => {
+                    handleSquareClick(
+                        squareName
+                    );
+                }
             );
 
 
-            boardElement.appendChild(square);
+            boardElement.appendChild(
+                square
+            );
         }
     }
+
 
     highlightSelectedSquare();
 }
 
 
 // ============================================
-// SQUARE CLICK
+// HANDLE SQUARE CLICK
 // ============================================
 
 function handleSquareClick(square) {
@@ -205,28 +315,37 @@ function handleSquareClick(square) {
         return;
     }
 
+
     if (obsidianThinking) {
         return;
     }
 
-    // Alleen tijdens onze beurt
+
+    // Alleen tijdens onze beurt.
     if (chess.turn() !== playerColor) {
         return;
     }
 
 
-    // Geen stuk geselecteerd
+    // ----------------------------------------
+    // GEEN STUK GESELECTEERD
+    // ----------------------------------------
+
     if (!selectedSquare) {
 
-        const piece = chess.get(square);
+        const piece =
+            chess.get(square);
+
 
         if (!piece) {
             return;
         }
 
+
         if (piece.color !== playerColor) {
             return;
         }
+
 
         selectedSquare = square;
 
@@ -236,7 +355,10 @@ function handleSquareClick(square) {
     }
 
 
-    // Opnieuw op hetzelfde stuk klikken
+    // ----------------------------------------
+    // ZELFDE VELD
+    // ----------------------------------------
+
     if (selectedSquare === square) {
 
         selectedSquare = null;
@@ -247,23 +369,31 @@ function handleSquareClick(square) {
     }
 
 
-    // Probeer zet te maken
-    const move = chess.move({
-        from: selectedSquare,
-        to: square,
+    // ----------------------------------------
+    // ZET PROBEREN
+    // ----------------------------------------
 
-        // Voor nu altijd promoveren naar dame
-        promotion: "q"
-    });
+    const move =
+        chess.move({
+            from: selectedSquare,
+            to: square,
+            promotion: "q"
+        });
 
 
+    // Ongeldige zet.
     if (!move) {
 
-        // Misschien heeft de speler op
-        // een ander eigen stuk geklikt.
-        const piece = chess.get(square);
+        // Misschien selecteert de speler
+        // een ander eigen stuk.
+        const piece =
+            chess.get(square);
 
-        if (piece && piece.color === playerColor) {
+
+        if (
+            piece &&
+            piece.color === playerColor
+        ) {
 
             selectedSquare = square;
 
@@ -272,30 +402,46 @@ function handleSquareClick(square) {
             return;
         }
 
+
         return;
     }
 
 
+    // ----------------------------------------
+    // GELDIGE ZET
+    // ----------------------------------------
+
+    lastMove = {
+        from: move.from,
+        to: move.to
+    };
+
+
     selectedSquare = null;
+
 
     drawBoard();
     updateMoves();
     updateStatus();
 
 
-    // Kijk of het spel afgelopen is
     if (isGameOver()) {
         return;
     }
 
 
-    // Obsidian mag nu spelen
-    setTimeout(makeObsidianMove, 350);
+    // ----------------------------------------
+    // OBSIDIAN
+    // ----------------------------------------
+
+    setTimeout(() => {
+        makeObsidianMove();
+    }, 350);
 }
 
 
 // ============================================
-// HIGHLIGHT
+// HIGHLIGHT SELECTED SQUARE
 // ============================================
 
 function highlightSelectedSquare() {
@@ -312,7 +458,7 @@ function highlightSelectedSquare() {
         });
 
 
-    if (!selectedSquare) {
+    if (!selectedSquare || !chess) {
         return;
     }
 
@@ -322,12 +468,15 @@ function highlightSelectedSquare() {
             `[data-square="${selectedSquare}"]`
         );
 
+
     if (selectedElement) {
-        selectedElement.classList.add("selected");
+
+        selectedElement.classList.add(
+            "selected"
+        );
     }
 
 
-    // Haal alle mogelijke zetten op
     const legalMoves =
         chess.moves({
             square: selectedSquare,
@@ -342,15 +491,23 @@ function highlightSelectedSquare() {
                 `[data-square="${move.to}"]`
             );
 
+
         if (!target) {
             return;
         }
 
 
         if (move.captured) {
-            target.classList.add("capture");
+
+            target.classList.add(
+                "capture"
+            );
+
         } else {
-            target.classList.add("legal");
+
+            target.classList.add(
+                "legal"
+            );
         }
     });
 }
@@ -362,13 +519,15 @@ function highlightSelectedSquare() {
 
 function makeObsidianMove() {
 
-    if (!gameStarted) {
+    if (!gameStarted || !chess) {
         return;
     }
+
 
     if (chess.turn() !== obsidianColor) {
         return;
     }
+
 
     if (isGameOver()) {
         return;
@@ -380,14 +539,57 @@ function makeObsidianMove() {
     updateStatus();
 
 
-    // Kleine vertraging zodat het niet lijkt
-    // alsof de zet onmiddellijk verschijnt.
+    /*
+     * De engine berekent hier meteen de
+     * beste drie kandidaten.
+     */
+    const topMoves =
+        Obsidian.getTopMoves(
+            chess,
+            3
+        );
+
+
+    displayBestMoves(topMoves);
+
+
+    if (
+        !topMoves ||
+        topMoves.length === 0
+    ) {
+
+        obsidianThinking = false;
+
+        updateStatus();
+
+        return;
+    }
+
+
+    const bestMove =
+        topMoves[0].move;
+
+
+    /*
+     * Kleine vertraging zodat de bot
+     * niet instant lijkt te spelen.
+     */
     setTimeout(() => {
 
-        const move = Obsidian.getBestMove(chess);
+        if (!gameStarted || !chess) {
+            return;
+        }
 
 
-        if (!move) {
+        const playedMove =
+            chess.move({
+                from: bestMove.from,
+                to: bestMove.to,
+                promotion: "q"
+            });
+
+
+        if (!playedMove) {
 
             obsidianThinking = false;
 
@@ -397,16 +599,15 @@ function makeObsidianMove() {
         }
 
 
-        chess.move({
-            from: move.from,
-            to: move.to,
-            promotion: "q"
-        });
+        lastMove = {
+            from: playedMove.from,
+            to: playedMove.to
+        };
 
 
         obsidianThinking = false;
-
         selectedSquare = null;
+
 
         drawBoard();
         updateMoves();
@@ -418,16 +619,158 @@ function makeObsidianMove() {
 
 
 // ============================================
+// DISPLAY BEST MOVES
+// ============================================
+
+function displayBestMoves(topMoves) {
+
+    if (!bestMovesElement) {
+        return;
+    }
+
+
+    bestMovesElement.innerHTML = "";
+
+
+    if (
+        !topMoves ||
+        topMoves.length === 0
+    ) {
+
+        bestMovesElement.innerHTML =
+            `<p class="empty-moves">
+                Geen zetten gevonden.
+            </p>`;
+
+        return;
+    }
+
+
+    topMoves.forEach(
+        (item, index) => {
+
+            const row =
+                document.createElement("div");
+
+
+            row.classList.add(
+                "best-move"
+            );
+
+
+            const rank =
+                document.createElement("span");
+
+            rank.classList.add(
+                "best-move-rank"
+            );
+
+            rank.textContent =
+                `#${index + 1}`;
+
+
+            const name =
+                document.createElement("span");
+
+            name.classList.add(
+                "best-move-name"
+            );
+
+            name.textContent =
+                item.move.san;
+
+
+            const evaluation =
+                document.createElement("span");
+
+            evaluation.classList.add(
+                "best-move-evaluation"
+            );
+
+
+            evaluation.textContent =
+                formatEvaluation(
+                    item.score
+                );
+
+
+            row.appendChild(rank);
+            row.appendChild(name);
+            row.appendChild(evaluation);
+
+
+            bestMovesElement.appendChild(
+                row
+            );
+        }
+    );
+}
+
+
+// ============================================
+// FORMAT EVALUATION
+// ============================================
+
+function formatEvaluation(score) {
+
+    /*
+     * De engine werkt intern ongeveer
+     * met centipawns.
+     *
+     * +0.50 = ongeveer een halve pion
+     */
+    const evaluation =
+        score / 100;
+
+
+    const sign =
+        evaluation > 0
+            ? "+"
+            : "";
+
+
+    return (
+        `${sign}${evaluation.toFixed(2)}`
+    );
+}
+
+
+// ============================================
+// CLEAR BEST MOVES
+// ============================================
+
+function clearBestMoves() {
+
+    if (!bestMovesElement) {
+        return;
+    }
+
+
+    bestMovesElement.innerHTML =
+        `<p class="empty-moves">
+            Obsidian heeft nog geen zetten berekend.
+        </p>`;
+}
+
+
+// ============================================
 // STATUS
 // ============================================
 
 function updateStatus() {
 
-    if (!gameStarted) {
-        statusElement.textContent = "Kies je kleur";
+    if (!gameStarted || !chess) {
+
+        statusElement.textContent =
+            "Kies je kleur";
+
         return;
     }
 
+
+    // ----------------------------------------
+    // SCHAAKMAT
+    // ----------------------------------------
 
     if (chess.in_checkmate()) {
 
@@ -436,15 +779,22 @@ function updateStatus() {
                 ? "Zwart"
                 : "Wit";
 
+
         statusElement.textContent =
             `${winner} wint`;
+
 
         gameMessageElement.textContent =
             `${winner} heeft schaakmat gezet.`;
 
+
         return;
     }
 
+
+    // ----------------------------------------
+    // REMISE
+    // ----------------------------------------
 
     if (
         chess.in_draw() ||
@@ -453,43 +803,74 @@ function updateStatus() {
         chess.insufficient_material()
     ) {
 
-        statusElement.textContent = "Remise";
+        statusElement.textContent =
+            "Remise";
+
 
         gameMessageElement.textContent =
             "Het spel eindigt in remise.";
 
+
         return;
     }
 
+
+    // ----------------------------------------
+    // OBSIDIAN DENKT
+    // ----------------------------------------
 
     if (obsidianThinking) {
 
         statusElement.textContent =
             "Obsidian denkt...";
 
+
         gameMessageElement.textContent =
-            "Obsidian kiest een zet.";
+            "Obsidian analyseert de positie.";
+
 
         return;
     }
 
 
-    if (chess.turn() === playerColor) {
+    // ----------------------------------------
+    // JOUW BEURT
+    // ----------------------------------------
+
+    if (
+        chess.turn() === playerColor
+    ) {
 
         statusElement.textContent =
             "Jouw beurt";
 
-        gameMessageElement.textContent =
-            "Kies een stuk en maak een zet.";
 
-    } else {
+        if (chess.in_check()) {
 
-        statusElement.textContent =
-            "Obsidian is aan zet";
+            gameMessageElement.textContent =
+                "Je koning staat schaak!";
 
-        gameMessageElement.textContent =
-            "Obsidian maakt een zet.";
+        } else {
+
+            gameMessageElement.textContent =
+                "Kies een stuk en maak een zet.";
+        }
+
+
+        return;
     }
+
+
+    // ----------------------------------------
+    // OBSIDIAN AAN ZET
+    // ----------------------------------------
+
+    statusElement.textContent =
+        "Obsidian is aan zet";
+
+
+    gameMessageElement.textContent =
+        "Obsidian maakt een zet.";
 }
 
 
@@ -498,6 +879,12 @@ function updateStatus() {
 // ============================================
 
 function isGameOver() {
+
+    if (!chess) {
+        return true;
+    }
+
+
     return (
         chess.game_over() ||
         chess.in_checkmate() ||
@@ -513,9 +900,17 @@ function isGameOver() {
 
 function updateMoves() {
 
-    const history = chess.history();
+    if (!chess) {
+        return;
+    }
+
+
+    const history =
+        chess.history();
+
 
     movesElement.innerHTML = "";
+
 
     moveCountElement.textContent =
         history.length;
@@ -532,30 +927,43 @@ function updateMoves() {
     }
 
 
-    for (let i = 0; i < history.length; i += 2) {
+    for (
+        let i = 0;
+        i < history.length;
+        i += 2
+    ) {
 
         const row =
             document.createElement("div");
 
-        row.classList.add("move-row");
+
+        row.classList.add(
+            "move-row"
+        );
 
 
+        // Zetnummer
         const number =
             document.createElement("span");
+
 
         number.textContent =
             `${Math.floor(i / 2) + 1}.`;
 
 
+        // Wit
         const whiteMove =
             document.createElement("strong");
+
 
         whiteMove.textContent =
             history[i] || "";
 
 
+        // Zwart
         const blackMove =
             document.createElement("strong");
+
 
         blackMove.textContent =
             history[i + 1] || "";
@@ -565,11 +973,23 @@ function updateMoves() {
         row.appendChild(whiteMove);
         row.appendChild(blackMove);
 
+
+        // Laatste zet visueel benadrukken.
+        if (
+            i === history.length - 1 ||
+            i + 1 === history.length - 1
+        ) {
+
+            row.classList.add(
+                "latest-move-row"
+            );
+        }
+
+
         movesElement.appendChild(row);
     }
 
 
-    // Scroll naar beneden
     movesElement.scrollTop =
         movesElement.scrollHeight;
 }
@@ -582,16 +1002,41 @@ function updateMoves() {
 function resetToSetup() {
 
     gameStarted = false;
+
     obsidianThinking = false;
+
     selectedSquare = null;
+
+    lastMove = null;
 
     chess = null;
 
-    gameElement.classList.add("hidden");
-    setup.classList.remove("hidden");
+
+    gameElement.classList.add(
+        "hidden"
+    );
+
+    setup.classList.remove(
+        "hidden"
+    );
+
 
     statusElement.textContent =
         "Kies je kleur";
 
+
     boardElement.innerHTML = "";
+
+
+    movesElement.innerHTML =
+        `<p class="empty-moves">
+            Nog geen zetten.
+        </p>`;
+
+
+    moveCountElement.textContent =
+        "0";
+
+
+    clearBestMoves();
 }
