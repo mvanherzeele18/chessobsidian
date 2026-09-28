@@ -7,7 +7,7 @@ const Obsidian = {
     MAX_SEARCH_TIME: 2800,
 
     // Verdedigende opening: 0 = uit, 1 = normaal, 2 = extra voorzichtig.
-    DEFENSIVE_OPENING: 2,
+    DEFENSIVE_OPENING: 1,
 
     // Na hoeveel zetten de opening-bonussen volledig zijn uitgedoofd.
     OPENING_MOVES: 12,
