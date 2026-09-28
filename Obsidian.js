@@ -6,6 +6,12 @@ const Obsidian = {
     // Maximale denktijd per zet (ms).
     MAX_SEARCH_TIME: 2800,
 
+    // Verdedigende opening: 0 = uit, 1 = normaal, 2 = extra voorzichtig.
+    DEFENSIVE_OPENING: 1,
+
+    // Na hoeveel zetten de opening-bonussen volledig zijn uitgedoofd.
+    OPENING_MOVES: 12,
+
     MATE: 100000,
     INF: 1000000,
     MAX_PLY: 64,
@@ -39,6 +45,7 @@ const Obsidian = {
     stopped: false,
     nodes: 0,
     lastDepth: 0,
+    openingWeight: 1,
 
     // ---------------------------------------------------------
     // PIECE SQUARE TABLES (vanuit wit, index 0 = a8)
@@ -154,6 +161,20 @@ const Obsidian = {
         }
 
         amount = Math.max(1, amount);
+
+        // Hoe "vroeg" is het spel? 1 = zet 1, 0 = opening voorbij.
+        const fullmove = parseInt(chess.fen().split(" ")[5], 10) || 1;
+
+        this.openingWeight = Math.max(
+            0,
+            1 - (fullmove - 1) / this.OPENING_MOVES
+        );
+
+        // De evaluatie verandert per zet in de opening, dus oude
+        // tabelscores zijn niet meer geldig.
+        if (this.openingWeight > 0) {
+            this.table.clear();
+        }
 
         const rootMoves = chess.moves({ verbose: true });
 
@@ -642,7 +663,12 @@ const Obsidian = {
                     }
                 }
 
-                score += sign * Math.round(shield * 10 * mg);
+                score += sign * Math.round(
+                    shield * (
+                        10 * mg +
+                        8 * this.openingWeight * this.DEFENSIVE_OPENING
+                    )
+                );
             }
         }
 
@@ -725,8 +751,136 @@ const Obsidian = {
         if (bishops.w >= 2) score += 30;
         if (bishops.b >= 2) score -= 30;
 
+        // Verdedigende opening (dooft uit naarmate het spel vordert).
+        if (this.openingWeight > 0 && this.DEFENSIVE_OPENING > 0) {
+            score += Math.round(
+                this.openingSolidity(board, kings) *
+                this.openingWeight *
+                this.DEFENSIVE_OPENING
+            );
+        }
+
         // Naar de kant van de speler die aan zet is + kleine tempo-bonus.
         return (chess.turn() === "w" ? score : -score) + 10;
+    },
+
+    // ---------------------------------------------------------
+    // OPENING: SOLIDE EN VERDEDIGEND
+    //
+    // Beloont: rokeren, ontwikkelde stukken, dame die thuis blijft
+    // tot de stukken uit zijn, gedekte pionnen.
+    // Straft: koning in het midden, flankpionnen die vooruit stormen,
+    // vroege damezetten.
+    // Score vanuit wit.
+    // ---------------------------------------------------------
+
+    openingSolidity(board, kings) {
+
+        let total = 0;
+
+        for (const color of ["w", "b"]) {
+
+            const sign = color === "w" ? 1 : -1;
+            const homeRow = color === "w" ? 7 : 0;
+            const pawnBehind = color === "w" ? 1 : -1;
+
+            let s = 0;
+
+            // Koning: gerokeerd is veilig.
+            const k = kings[color];
+
+            if (k) {
+                if (
+                    k.r === homeRow &&
+                    (k.c === 6 || k.c === 2 || k.c === 7 || k.c === 1)
+                ) {
+                    s += 45;
+                } else if (k.r === homeRow && k.c === 4) {
+                    s -= 15;
+                } else {
+                    s -= 40;
+                }
+            }
+
+            // Stukken die nog op hun beginveld staan.
+            let undeveloped = 0;
+
+            for (const c of [1, 2, 5, 6]) {
+
+                const p = board[homeRow][c];
+
+                if (
+                    p &&
+                    p.color === color &&
+                    (p.type === "n" || p.type === "b")
+                ) {
+                    undeveloped++;
+                }
+            }
+
+            s -= undeveloped * 12;
+
+            // Eén doorloop: dame, flankpionnen, gedekte pionnen.
+            let queenAway = false;
+
+            for (let r = 0; r < 8; r++) {
+
+                for (let c = 0; c < 8; c++) {
+
+                    const p = board[r][c];
+
+                    if (!p || p.color !== color) {
+                        continue;
+                    }
+
+                    if (p.type === "q" && !(r === homeRow && c === 3)) {
+                        queenAway = true;
+                    }
+
+                    if (p.type !== "p") {
+                        continue;
+                    }
+
+                    // Flankpionnen (a, b, f, g, h) niet te ver vooruit.
+                    const adv = color === "w" ? 6 - r : r - 1;
+
+                    if ((c <= 1 || c >= 5) && adv >= 2) {
+                        s -= 10;
+                    }
+
+                    // Gedekte pion (pionnenketen).
+                    const br = r + pawnBehind;
+
+                    if (br >= 0 && br < 8) {
+
+                        for (const dc of [-1, 1]) {
+
+                            const bc = c + dc;
+
+                            if (bc < 0 || bc > 7) {
+                                continue;
+                            }
+
+                            const q = board[br][bc];
+
+                            if (q && q.color === color && q.type === "p") {
+                                s += 5;
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Dame te vroeg naar voren terwijl stukken nog slapen.
+            if (queenAway && undeveloped > 0) {
+                s -= undeveloped * 10;
+            }
+
+            total += sign * s;
+        }
+
+        return total;
     },
 
     // ---------------------------------------------------------
