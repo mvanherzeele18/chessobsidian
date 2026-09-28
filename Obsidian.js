@@ -4,7 +4,7 @@ const Obsidian = {
     SEARCH_DEPTH: 15,
 
     // Maximale denktijd per zet (ms).
-    MAX_SEARCH_TIME: 3500,
+    MAX_SEARCH_TIME: 1000,
 
     // Verdedigende opening: 0 = uit, 1 = normaal, 2 = extra voorzichtig.
     DEFENSIVE_OPENING: 1,
