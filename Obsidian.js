@@ -3,7 +3,7 @@ const Obsidian = {
     SEARCH_DEPTH: 5,
 
     // Maximale denktijd per zet.
-    MAX_SEARCH_TIME: 1800,
+    MAX_SEARCH_TIME: 2800,
 
     VALUES: {
         p: 100,
@@ -105,75 +105,98 @@ const Obsidian = {
 
     getBestMove(chess) {
 
-        const result = this.getTopMoves(chess, 1);
-
-        return result.length
-            ? result[0].move
-            : null;
-    },
-
-    getTopMoves(chess, amount = 3) {
-
+            const result = this.getTopMoves(chess, 1);
+    
+            return result.length
+                ? result[0].move
+                : null;
+        },
+    
+        getTopMoves(chess, amount = 3) {
+    
         this.startTime = performance.now();
         this.stopped = false;
         this.nodes = 0;
-
+    
         this.killerMoves = [];
         this.history.clear();
-
-        // Geen oneindig grote transposition table.
+    
         if (this.table.size > 100000) {
             this.table.clear();
         }
-
+    
         const rootColor = chess.turn();
+    
+        // BELANGRIJK:
+        // Eerst altijd alle legale zetten ophalen.
+        // Hierdoor kan Obsidian NOOIT "geen zetten gevonden"
+        // geven zolang het geen echte game-over positie is.
         const rootMoves = chess.moves({
             verbose: true
         });
-
+    
         if (!rootMoves.length) {
             return [];
         }
-
+    
+        // Veilige fallback.
+        // Zelfs als de engine onmiddellijk wordt gestopt,
+        // hebben we altijd minstens één zet.
+        let fallback = rootMoves.map(move => ({
+            move,
+            score: 0
+        }));
+    
+        // Snelle eerste ordering.
         this.orderMoves(
             chess,
             rootMoves,
             0
         );
-
-        let bestResults = [];
-
-        // Iterative deepening.
-        // Als depth 5 niet binnen de tijd lukt,
-        // houden we de volledige depth 4-resultaten.
+    
+        // We bewaren de laatst VOLLEDIG berekende depth.
+        let bestResults = fallback;
+    
         for (
             let depth = 1;
             depth <= this.SEARCH_DEPTH;
             depth++
         ) {
-
-            const results =
-                this.searchRoot(
-                    chess,
-                    depth,
-                    rootColor,
-                    rootMoves
-                );
-
-            if (this.stopped) {
+    
+            // Reset alleen de stopstatus voor een nieuwe
+            // iterative-deepening laag.
+            this.stopped = false;
+    
+            const results = this.searchRoot(
+                chess,
+                depth,
+                rootColor,
+                rootMoves
+            );
+    
+            // Alleen accepteren als de volledige depth
+            // succesvol is afgerond.
+            if (
+                !this.stopped &&
+                results &&
+                results.length
+            ) {
+                bestResults = results;
+            } else {
+                // Deze depth was niet volledig klaar.
+                // Gebruik de vorige volledig berekende depth.
                 break;
             }
-
-            if (results.length) {
-                bestResults = results;
-            }
         }
-
+    
         bestResults.sort(
             (a, b) => b.score - a.score
         );
-
-        return bestResults.slice(0, amount);
+    
+        return bestResults.slice(
+            0,
+            Math.max(1, amount)
+        );
     },
 
     // ---------------------------------------------------------
@@ -186,42 +209,47 @@ const Obsidian = {
         rootColor,
         moves
     ) {
-
+    
         let alpha = -Infinity;
         const beta = Infinity;
-
+    
         const results = [];
-
+    
         this.orderMoves(
             chess,
             moves,
             0
         );
-
+    
         for (const move of moves) {
-
+    
+            // Stop vóór we aan een nieuwe zet beginnen.
             if (this.outOfTime()) {
                 this.stopped = true;
                 break;
             }
-
+    
             chess.move({
                 from: move.from,
                 to: move.to,
                 promotion: move.promotion || "q"
             });
-
+    
             let score;
-
+    
             if (chess.in_checkmate()) {
+    
                 score = 1000000;
+    
             } else if (
                 chess.in_draw() ||
                 chess.in_stalemate()
             ) {
+    
                 score = 0;
+    
             } else {
-
+    
                 score = this.search(
                     chess,
                     depth - 1,
@@ -230,41 +258,35 @@ const Obsidian = {
                     rootColor,
                     1
                 );
-
+    
                 score = -score;
             }
-
+    
             chess.undo();
-
+    
+            // Als deze volledige zet niet meer betrouwbaar
+            // berekend kon worden, beëindig deze depth.
             if (this.stopped) {
                 break;
             }
-
+    
             results.push({
                 move,
                 score
             });
-
+    
             if (score > alpha) {
                 alpha = score;
             }
         }
-
+    
+        // Alleen volledig bruikbare resultaten teruggeven.
         results.sort(
             (a, b) => b.score - a.score
         );
-
-        // Gebruik de nieuwe volgorde voor de volgende
-        // iterative-deepening laag.
-        moves.splice(
-            0,
-            moves.length,
-            ...results.map(x => x.move)
-        );
-
+    
         return results;
     },
-
     // ---------------------------------------------------------
     // NEGAMAX + ALPHA BETA
     // ---------------------------------------------------------
