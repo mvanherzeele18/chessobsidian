@@ -1,10 +1,10 @@
 const Obsidian = {
 
     // Maximale diepte. De zoektijd bepaalt in de praktijk hoe diep hij komt.
-    SEARCH_DEPTH: 10,
+    SEARCH_DEPTH: 15,
 
     // Maximale denktijd per zet (ms).
-    MAX_SEARCH_TIME: 2800,
+    MAX_SEARCH_TIME: 3500,
 
     // Verdedigende opening: 0 = uit, 1 = normaal, 2 = extra voorzichtig.
     DEFENSIVE_OPENING: 1,
@@ -149,6 +149,21 @@ const Obsidian = {
         ]
     },
 
+    // Snelle evaluatie van één kandidaatzet (geen zoekopdracht), voor
+    // situaties waarin de motor niet echt zoekt: boekzetten en de
+    // enige-legale-zet-situatie. Vanuit het perspectief van de speler
+    // die de zet speelt.
+    quickEval(chess, move) {
+
+        this.play(chess, move);
+
+        const score = -this.evaluate(chess);
+
+        this.undo(chess);
+
+        return score;
+    },
+
     // ---------------------------------------------------------
     // PUBLIC
     // ---------------------------------------------------------
@@ -213,9 +228,12 @@ const Obsidian = {
             return [];
         }
 
-        // Maar één legale zet: niet nadenken.
+        // Maar één legale zet: niet nadenken, wel de score tonen.
         if (rootMoves.length === 1) {
-            return [{ move: rootMoves[0], score: 0 }];
+            return [{
+                move: rootMoves[0],
+                score: this.quickEval(chess, rootMoves[0])
+            }];
         }
 
         // Veilige fallback: er is altijd minstens één zet.
@@ -444,7 +462,10 @@ const Obsidian = {
 
         return [chosen, ...cands]
             .slice(0, 3)
-            .map(c => ({ move: c.move, score: 0 }));
+            .map(c => ({
+                move: c.move,
+                score: this.quickEval(chess, c.move)
+            }));
     },
 
     // ---------------------------------------------------------
