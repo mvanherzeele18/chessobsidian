@@ -1,172 +1,136 @@
-// ============================================
-// OBSIDIAN CHESS ENGINE
-// ============================================
-
 const Obsidian = {
 
-    // ========================================
-    // INSTELLINGEN
-    // ========================================
+    SEARCH_DEPTH: 5,
 
-    SEARCH_DEPTH: 3,
-
-
-    // ========================================
-    // STUKWAARDES
-    // ========================================
-
-    PIECE_VALUES: {
-
+    // Waarden zijn bewust iets anders dan alleen materiaal.
+    // Obsidian moet begrijpen dat een goede positie soms belangrijker
+    // is dan een pion winnen.
+    VALUES: {
         p: 100,
         n: 320,
         b: 330,
         r: 500,
         q: 900,
         k: 20000
-
     },
 
+    MAX_SEARCH_TIME: 10000,
 
-    // ========================================
-    // BESTE ZET
-    // ========================================
+    transpositionTable: new Map(),
+    killerMoves: new Map(),
+    historyMoves: new Map(),
+
+    searchStart: 0,
+    searchAborted: false,
+
+    // ------------------------------------------------------------
+    // PUBLIC API
+    // ------------------------------------------------------------
 
     getBestMove(chess) {
-
-        const topMoves =
-            this.getTopMoves(
-                chess,
-                1
-            );
-
-
-        if (
-            !topMoves ||
-            topMoves.length === 0
-        ) {
-            return null;
-        }
-
-
-        return topMoves[0].move;
+        const moves = this.getTopMoves(chess, 1);
+        return moves.length ? moves[0].move : null;
     },
 
+    getTopMoves(chess, amount = 3) {
 
-    // ========================================
-    // TOP MOVES
-    // ========================================
+        this.searchStart = performance.now();
+        this.searchAborted = false;
 
-    getTopMoves(
-        chess,
-        amount = 3
-    ) {
+        // Niet eindeloos oude posities bewaren.
+        if (this.transpositionTable.size > 50000) {
+            this.transpositionTable.clear();
+        }
 
-        const botColor =
-            chess.turn();
+        const botColor = chess.turn();
+        const moves = chess.moves({ verbose: true });
 
-
-        const moves =
-            chess.moves({
-                verbose: true
-            });
-
-
-        if (moves.length === 0) {
+        if (!moves.length) {
             return [];
         }
 
+        this.orderMoves(chess, moves, botColor);
 
         const results = [];
 
+        for (const move of moves) {
 
-        // Eerst tactisch interessante zetten
-        // bekijken. Dit maakt alpha-beta
-        // veel effectiever.
-        const orderedMoves =
-            this.orderMoves(
-                chess,
-                moves
-            );
+            if (this.timeExceeded()) {
+                this.searchAborted = true;
+                break;
+            }
 
-
-        for (
-            const move of orderedMoves
-        ) {
+            const moveKey = this.moveKey(move);
 
             chess.move({
                 from: move.from,
                 to: move.to,
-                promotion: "q"
+                promotion: move.promotion || "q"
             });
 
+            let score;
 
-            const score =
-                this.minimax(
+            if (
+                chess.in_checkmate() ||
+                chess.in_draw() ||
+                chess.in_stalemate()
+            ) {
+                score = this.terminalScore(chess, botColor, 1);
+            } else {
+                score = this.minimax(
                     chess,
                     this.SEARCH_DEPTH - 1,
                     -Infinity,
                     Infinity,
-                    botColor
+                    botColor,
+                    1
                 );
-
+            }
 
             chess.undo();
 
+            if (this.searchAborted) {
+                break;
+            }
 
             results.push({
-                move: move,
-                score: score
+                move,
+                score,
+                moveKey
             });
         }
 
+        // Als de tijdslimiet geraakt werd, hebben we nog steeds
+        // bruikbare resultaten van de reeds onderzochte zetten.
+        results.sort((a, b) => b.score - a.score);
 
-        // Hoogste score eerst.
-        results.sort(
-            (a, b) =>
-                b.score - a.score
-        );
-
-
-        return results.slice(
-            0,
-            amount
-        );
+        return results.slice(0, amount);
     },
 
+    // ------------------------------------------------------------
+    // MINIMAX + ALPHA BETA
+    // ------------------------------------------------------------
 
-    // ========================================
-    // MINIMAX
-    // ========================================
+    minimax(chess, depth, alpha, beta, botColor, ply) {
 
-    minimax(
-        chess,
-        depth,
-        alpha,
-        beta,
-        botColor
-    ) {
-
-        // ------------------------------------
-        // SCHAAKMAT
-        // ------------------------------------
-
-        if (chess.in_checkmate()) {
-
-            if (
-                chess.turn() === botColor
-            ) {
-
-                return -1000000;
-            }
-
-
-            return 1000000;
+        if (this.timeExceeded()) {
+            this.searchAborted = true;
+            return 0;
         }
 
+        const key = this.positionKey(chess);
+        const cached = this.transpositionTable.get(key);
 
-        // ------------------------------------
-        // REMISE
-        // ------------------------------------
+        if (
+            cached &&
+            cached.depth >= depth
+        ) {
+            return cached.score;
+        }
+
+        if (chess.in_checkmate()) {
+            return this.terminalScore(chess, botColor, ply);
+        }
 
         if (
             chess.in_draw() ||
@@ -174,633 +138,269 @@ const Obsidian = {
             chess.in_threefold_repetition() ||
             chess.insufficient_material()
         ) {
-
             return 0;
         }
 
-
-        // ------------------------------------
-        // LEAF
-        // ------------------------------------
-
         if (depth <= 0) {
-
-            return this.evaluate(
-                chess,
-                botColor
-            );
-        }
-
-
-        const moves =
-            chess.moves({
-                verbose: true
+            const score = this.evaluate(chess, botColor);
+            this.transpositionTable.set(key, {
+                depth,
+                score
             });
-
-
-        const orderedMoves =
-            this.orderMoves(
-                chess,
-                moves
-            );
-
-
-        const maximizing =
-            chess.turn() === botColor;
-
-
-        // ====================================
-        // MAX
-        // ====================================
-
-        if (maximizing) {
-
-            let bestScore =
-                -Infinity;
-
-
-            for (
-                const move of orderedMoves
-            ) {
-
-                chess.move({
-                    from: move.from,
-                    to: move.to,
-                    promotion: "q"
-                });
-
-
-                const score =
-                    this.minimax(
-                        chess,
-                        depth - 1,
-                        alpha,
-                        beta,
-                        botColor
-                    );
-
-
-                chess.undo();
-
-
-                bestScore =
-                    Math.max(
-                        bestScore,
-                        score
-                    );
-
-
-                alpha =
-                    Math.max(
-                        alpha,
-                        score
-                    );
-
-
-                if (
-                    beta <= alpha
-                ) {
-                    break;
-                }
-            }
-
-
-            return bestScore;
+            return score;
         }
 
+        const moves = chess.moves({ verbose: true });
 
-        // ====================================
-        // MIN
-        // ====================================
+        if (!moves.length) {
+            return this.evaluate(chess, botColor);
+        }
 
-        let bestScore =
-            Infinity;
+        this.orderMoves(chess, moves, chess.turn());
 
+        const maximizing = chess.turn() === botColor;
 
-        for (
-            const move of orderedMoves
-        ) {
+        let bestScore = maximizing
+            ? -Infinity
+            : Infinity;
+
+        for (const move of moves) {
+
+            if (this.timeExceeded()) {
+                this.searchAborted = true;
+                return bestScore === Infinity || bestScore === -Infinity
+                    ? 0
+                    : bestScore;
+            }
 
             chess.move({
                 from: move.from,
                 to: move.to,
-                promotion: "q"
+                promotion: move.promotion || "q"
             });
 
-
-            const score =
-                this.minimax(
-                    chess,
-                    depth - 1,
-                    alpha,
-                    beta,
-                    botColor
-                );
-
+            const score = this.minimax(
+                chess,
+                depth - 1,
+                alpha,
+                beta,
+                botColor,
+                ply + 1
+            );
 
             chess.undo();
 
+            if (maximizing) {
 
-            bestScore =
-                Math.min(
-                    bestScore,
-                    score
-                );
+                if (score > bestScore) {
+                    bestScore = score;
+                }
 
+                alpha = Math.max(alpha, bestScore);
 
-            beta =
-                Math.min(
-                    beta,
-                    score
-                );
+            } else {
 
+                if (score < bestScore) {
+                    bestScore = score;
+                }
 
-            if (
-                beta <= alpha
-            ) {
+                beta = Math.min(beta, bestScore);
+            }
+
+            if (beta <= alpha) {
+
+                // Killer move: zet die vaak voor een cutoff zorgt.
+                const killerKey = `${depth}`;
+
+                if (!this.killerMoves.has(killerKey)) {
+                    this.killerMoves.set(killerKey, []);
+                }
+
+                const killers = this.killerMoves.get(killerKey);
+                const key = this.moveKey(move);
+
+                if (!killers.includes(key)) {
+                    killers.unshift(key);
+
+                    if (killers.length > 2) {
+                        killers.pop();
+                    }
+                }
+
                 break;
             }
         }
 
+        this.transpositionTable.set(key, {
+            depth,
+            score: bestScore
+        });
 
         return bestScore;
     },
 
+    // ------------------------------------------------------------
+    // EVALUATION
+    // ------------------------------------------------------------
 
-    // ========================================
-    // POSITION EVALUATION
-    // ========================================
+    evaluate(chess, botColor) {
 
-    evaluate(
-        chess,
-        botColor
-    ) {
-
-        const opponent =
-            botColor === "w"
-                ? "b"
-                : "w";
-
+        const opponent = botColor === "w" ? "b" : "w";
 
         let score = 0;
 
+        // 1. Materiaal
+        score += this.evaluateMaterial(chess, botColor);
 
-        // ------------------------------------
-        // 1. MATERIAAL
-        // ------------------------------------
+        // 2. Ontwikkeling
+        score += this.evaluateDevelopment(chess, botColor);
 
-        score +=
-            this.evaluateMaterial(
-                chess,
-                botColor
-            );
+        // 3. Centrum
+        score += this.evaluateCenter(chess, botColor);
 
+        // 4. Aanval en activiteit
+        score += this.evaluateActivity(chess, botColor);
 
-        // ------------------------------------
-        // 2. KONINGVEILIGHEID
-        // ------------------------------------
+        // 5. Verdediging / aangevallen stukken
+        score += this.evaluatePieceSafety(chess, botColor);
 
-        score +=
-            this.evaluateKingSafety(
-                chess,
-                botColor
-            );
+        // 6. Koningveiligheid
+        score += this.evaluateKingSafety(chess, botColor);
 
+        // 7. Pionnenstructuur
+        score += this.evaluatePawns(chess, botColor);
 
-        // ------------------------------------
-        // 3. VERDEDIGING
-        // ------------------------------------
+        // 8. Rokeren
+        score += this.evaluateCastling(chess, botColor);
 
-        score +=
-            this.evaluateDefense(
-                chess,
-                botColor
-            );
-
-
-        // ------------------------------------
-        // 4. CENTRUM
-        // ------------------------------------
-
-        score +=
-            this.evaluateCenter(
-                chess,
-                botColor
-            );
-
-
-        // ------------------------------------
-        // 5. MOBILITEIT
-        // ------------------------------------
-
-        score +=
-            this.evaluateMobility(
-                chess,
-                botColor
-            );
-
-
-        // ------------------------------------
-        // 6. AANVAL
-        // ------------------------------------
-
-        score +=
-            this.evaluateAttack(
-                chess,
-                botColor
-            );
-
-
-        // ------------------------------------
-        // 7. SCHAAK
-        // ------------------------------------
-
+        // 9. Schaak
         if (chess.in_check()) {
-
-            if (
-                chess.turn() === botColor
-            ) {
-
-                score -= 120;
-
-            } else {
-
-                score += 120;
-            }
+            score += chess.turn() === botColor
+                ? -120
+                : 120;
         }
 
+        // Kleine bonus voor activiteit.
+        const ownMoves = this.getLegalMoves(chess, botColor);
+        const enemyMoves = this.getLegalMoves(chess, opponent);
+
+        score += (ownMoves.length - enemyMoves.length) * 2;
 
         return score;
     },
 
-
-    // ========================================
+    // ------------------------------------------------------------
     // MATERIAL
-    // ========================================
+    // ------------------------------------------------------------
 
-    evaluateMaterial(
-        chess,
-        botColor
-    ) {
+    evaluateMaterial(chess, botColor) {
 
         let score = 0;
 
+        for (let row = 0; row < 8; row++) {
 
-        const board =
-            chess.board();
+            for (let col = 0; col < 8; col++) {
 
-
-        for (
-            const row of board
-        ) {
-
-            for (
-                const piece of row
-            ) {
+                const square = this.toSquare(row, col);
+                const piece = chess.get(square);
 
                 if (!piece) {
                     continue;
                 }
 
+                const value = this.VALUES[piece.type];
 
-                const value =
-                    this.PIECE_VALUES[
-                        piece.type
-                    ];
-
-
-                if (
-                    piece.color === botColor
-                ) {
-
+                if (piece.color === botColor) {
                     score += value;
-
                 } else {
-
                     score -= value;
                 }
             }
         }
 
+        return score;
+    },
+
+    // ------------------------------------------------------------
+    // DEVELOPMENT
+    // ------------------------------------------------------------
+
+    evaluateDevelopment(chess, botColor) {
+
+        const opponent = botColor === "w" ? "b" : "w";
+
+        let score = 0;
+
+        score += this.developmentForColor(chess, botColor);
+        score -= this.developmentForColor(chess, opponent);
 
         return score;
     },
 
-
-    // ========================================
-    // KING SAFETY
-    // ========================================
-
-    evaluateKingSafety(
-        chess,
-        botColor
-    ) {
-
-        const board =
-            chess.board();
-
+    developmentForColor(chess, color) {
 
         let score = 0;
 
+        const backRank = color === "w" ? 1 : 8;
 
-        let king = null;
+        const pieces = [
+            `b${backRank}`,
+            `c${backRank}`,
+            `f${backRank}`,
+            `g${backRank}`
+        ];
 
+        for (const square of pieces) {
 
-        // Zoek eigen koning.
-        for (
-            let row = 0;
-            row < 8;
-            row++
-        ) {
+            const piece = chess.get(square);
 
-            for (
-                let col = 0;
-                col < 8;
-                col++
-            ) {
-
-                const piece =
-                    board[row][col];
-
-
-                if (
-                    piece &&
-                    piece.type === "k" &&
-                    piece.color === botColor
-                ) {
-
-                    king = {
-                        row: row,
-                        col: col
-                    };
-
-                    break;
-                }
+            if (!piece || piece.color !== color) {
+                score += 0;
+                continue;
             }
 
-
-            if (king) {
-                break;
+            // Paarden en lopers die nog thuis staan.
+            if (piece.type === "n" || piece.type === "b") {
+                score -= 28;
             }
         }
 
+        // Paarden/ lopers krijgen bonus als ze actief ontwikkeld zijn.
+        for (let row = 0; row < 8; row++) {
 
-        if (!king) {
-            return 0;
-        }
+            for (let col = 0; col < 8; col++) {
 
+                const square = this.toSquare(row, col);
+                const piece = chess.get(square);
 
-        // ------------------------------------
-        // Koning staat niet schaak
-        // ------------------------------------
-
-        if (
-            chess.turn() !== botColor ||
-            !chess.in_check()
-        ) {
-
-            score += 10;
-        }
-
-
-        // ------------------------------------
-        // Eigen pionnen rond koning
-        // ------------------------------------
-
-        const direction =
-            botColor === "w"
-                ? -1
-                : 1;
-
-
-        const pawnRow =
-            king.row + direction;
-
-
-        if (
-            pawnRow >= 0 &&
-            pawnRow < 8
-        ) {
-
-            for (
-                let col =
-                    king.col - 1;
-
-                col <= king.col + 1;
-
-                col++
-            ) {
-
-                if (
-                    col < 0 ||
-                    col > 7
-                ) {
+                if (!piece || piece.color !== color) {
                     continue;
                 }
 
+                if (piece.type === "n" || piece.type === "b") {
 
-                const piece =
-                    board[pawnRow][col];
-
-
-                if (
-                    piece &&
-                    piece.color === botColor &&
-                    piece.type === "p"
-                ) {
-
-                    score += 18;
-                }
-            }
-        }
-
-
-        return score;
-    },
-
-
-    // ========================================
-    // DEFENSE
-    // ========================================
-
-    evaluateDefense(
-        chess,
-        botColor
-    ) {
-
-        const board =
-            chess.board();
-
-
-        let score = 0;
-
-
-        /*
-         * We geven bonus voor stukken die
-         * door andere stukken ondersteund
-         * worden.
-         */
-
-        for (
-            let row = 0;
-            row < 8;
-            row++
-        ) {
-
-            for (
-                let col = 0;
-                col < 8;
-                col++
-            ) {
-
-                const piece =
-                    board[row][col];
-
-
-                if (
-                    !piece ||
-                    piece.color !== botColor
-                ) {
-                    continue;
-                }
-
-
-                const square =
-                    this.toSquare(
-                        row,
-                        col
-                    );
-
-
-                const defenders =
-                    this.countDefenders(
-                        chess,
-                        square,
-                        botColor
-                    );
-
-
-                if (defenders > 0) {
-
-                    // Vooral waardevolle stukken
-                    // wil Obsidian beschermd zien.
-                    const value =
-                        this.PIECE_VALUES[
-                            piece.type
-                        ];
-
-
-                    if (value >= 500) {
-
-                        score +=
-                            defenders * 10;
-
-                    } else {
-
-                        score +=
-                            defenders * 4;
+                    if (row >= 2 && row <= 5) {
+                        score += 16;
                     }
-                }
-            }
-        }
 
-
-        return score;
-    },
-
-
-    // ========================================
-    // COUNT DEFENDERS
-    // ========================================
-
-    countDefenders(
-        chess,
-        square,
-        color
-    ) {
-
-        /*
-         * chess.js geeft geen directe
-         * "defenders of square"-functie.
-         *
-         * Daarom testen we welke eigen stukken
-         * naar dat veld zouden kunnen bewegen.
-         */
-
-        let count = 0;
-
-
-        const board =
-            chess.board();
-
-
-        for (
-            let row = 0;
-            row < 8;
-            row++
-        ) {
-
-            for (
-                let col = 0;
-                col < 8;
-                col++
-            ) {
-
-                const piece =
-                    board[row][col];
-
-
-                if (
-                    !piece ||
-                    piece.color !== color
-                ) {
-                    continue;
-                }
-
-
-                const from =
-                    this.toSquare(
-                        row,
-                        col
-                    );
-
-
-                const moves =
-                    chess.moves({
-                        square: from,
+                    const moves = chess.moves({
+                        square,
                         verbose: true
                     });
 
-
-                for (
-                    const move of moves
-                ) {
-
-                    if (
-                        move.to === square
-                    ) {
-
-                        count++;
-
-                        break;
-                    }
+                    score += Math.min(moves.length, 6) * 4;
                 }
             }
         }
 
-
-        return count;
+        return score;
     },
 
+    // ------------------------------------------------------------
+    // CENTER
+    // ------------------------------------------------------------
 
-    // ========================================
-    // CENTER CONTROL
-    // ========================================
-
-    evaluateCenter(
-        chess,
-        botColor
-    ) {
+    evaluateCenter(chess, botColor) {
 
         const center = [
             "d4",
@@ -809,290 +409,645 @@ const Obsidian = {
             "e5"
         ];
 
+        const extendedCenter = [
+            "c3",
+            "d3",
+            "e3",
+            "f3",
+            "c4",
+            "f4",
+            "c5",
+            "f5",
+            "c6",
+            "d6",
+            "e6",
+            "f6"
+        ];
 
         let score = 0;
 
+        for (const square of center) {
 
-        for (
-            const square of center
-        ) {
-
-            const piece =
-                chess.get(square);
-
+            const piece = chess.get(square);
 
             if (!piece) {
                 continue;
             }
 
-
-            if (
-                piece.color === botColor
-            ) {
-
-                score += 12;
-
+            if (piece.color === botColor) {
+                score += piece.type === "p" ? 45 : 28;
             } else {
-
-                score -= 12;
+                score -= piece.type === "p" ? 45 : 28;
             }
         }
 
+        for (const square of extendedCenter) {
 
-        return score;
-    },
+            const piece = chess.get(square);
 
-
-    // ========================================
-    // MOBILITY
-    // ========================================
-
-    evaluateMobility(
-        chess,
-        botColor
-    ) {
-
-        /*
-         * Mobiliteit is positief,
-         * maar bewust niet heel zwaar.
-         */
-
-        const moves =
-            chess.moves().length;
-
-
-        if (
-            chess.turn() === botColor
-        ) {
-
-            return moves * 3;
-        }
-
-
-        return -moves * 3;
-    },
-
-
-    // ========================================
-    // ATTACK
-    // ========================================
-
-    evaluateAttack(
-        chess,
-        botColor
-    ) {
-
-        let score = 0;
-
-
-        const moves =
-            chess.moves({
-                verbose: true
-            });
-
-
-        for (
-            const move of moves
-        ) {
-
-            if (!move.captured) {
+            if (!piece) {
                 continue;
             }
 
-
-            const capturedValue =
-                this.PIECE_VALUES[
-                    move.captured
-                ] || 0;
-
-
-            const attackerValue =
-                this.PIECE_VALUES[
-                    move.piece
-                ] || 0;
-
-
-            /*
-             * Een stuk slaan is goed.
-             */
-            score +=
-                capturedValue * 0.04;
-
-
-            /*
-             * Grote stukken slaan krijgt
-             * een extra bonus.
-             */
-            if (
-                capturedValue >= 500
-            ) {
-
-                score += 15;
-            }
-
-
-            /*
-             * Een duur stuk voor een goedkoper
-             * stuk opofferen wordt ontmoedigd.
-             */
-            if (
-                attackerValue >
-                capturedValue
-            ) {
-
-                score -= 10;
+            if (piece.color === botColor) {
+                score += 9;
+            } else {
+                score -= 9;
             }
         }
-
 
         return score;
     },
 
+    // ------------------------------------------------------------
+    // ACTIVITY / ATTACK
+    // ------------------------------------------------------------
 
-    // ========================================
-    // MOVE ORDERING
-    // ========================================
+    evaluateActivity(chess, botColor) {
 
-    orderMoves(
-        chess,
-        moves
-    ) {
+        const opponent = botColor === "w" ? "b" : "w";
 
-        /*
-         * BELANGRIJK:
-         *
-         * We gebruiken hier geen ingewikkelde
-         * evaluatie. Dit is alleen om sterke
-         * kandidaten eerst te bekijken.
-         */
+        let score = 0;
 
-        return moves.sort(
-            (a, b) => {
+        const ownMoves = this.getLegalMoves(chess, botColor);
+        const enemyMoves = this.getLegalMoves(chess, opponent);
 
-                let scoreA = 0;
-                let scoreB = 0;
+        score += ownMoves.length * 3;
+        score -= enemyMoves.length * 2;
 
+        // Aanvallen van waardevolle stukken.
+        for (const move of ownMoves) {
 
-                // --------------------------------
-                // CAPTURES
-                // --------------------------------
+            if (move.captured) {
 
-                if (a.captured) {
+                const capturedValue =
+                    this.VALUES[move.captured];
 
-                    scoreA +=
-                        (
-                            this.PIECE_VALUES[
-                                a.captured
-                            ] || 0
-                        ) * 10;
-                }
-
-
-                if (b.captured) {
-
-                    scoreB +=
-                        (
-                            this.PIECE_VALUES[
-                                b.captured
-                            ] || 0
-                        ) * 10;
-                }
-
-
-                // --------------------------------
-                // PROMOTION
-                // --------------------------------
-
-                if (a.promotion) {
-                    scoreA += 8000;
-                }
-
-
-                if (b.promotion) {
-                    scoreB += 8000;
-                }
-
-
-                // --------------------------------
-                // CHECK
-                // --------------------------------
-
-                if (
-                    this.moveGivesCheck(
-                        chess,
-                        a
-                    )
-                ) {
-
-                    scoreA += 5000;
-                }
-
-
-                if (
-                    this.moveGivesCheck(
-                        chess,
-                        b
-                    )
-                ) {
-
-                    scoreB += 5000;
-                }
-
-
-                return scoreB - scoreA;
+                score += Math.round(capturedValue * 0.12);
             }
-        );
+
+            if (move.flags && move.flags.includes("c")) {
+                score += 10;
+            }
+        }
+
+        return score;
     },
 
+    // ------------------------------------------------------------
+    // PIECE SAFETY
+    //
+    // Dit is het belangrijkste nieuwe onderdeel.
+    //
+    // Voorbeeld:
+    //
+    // zwarte toren wordt aangevallen door witte pion
+    // toren wordt verdedigd
+    //
+    // pion (100) -> toren (500)
+    //
+    // Als pion toren neemt en verdediger de pion terugneemt:
+    // wit wint een toren voor een pion.
+    //
+    // Daarom krijgt Obsidian hiervoor een flinke straf.
+    //
+    // Maar:
+    //
+    // dame (900) -> toren (500)
+    // verdediger neemt dame terug
+    //
+    // Dan wint Obsidian ongeveer 400 materiaal.
+    //
+    // Dus dat kan juist positief zijn.
+    // ------------------------------------------------------------
 
-    // ========================================
-    // MOVE GIVES CHECK
-    // ========================================
+    evaluatePieceSafety(chess, botColor) {
 
-    moveGivesCheck(
-        chess,
-        move
-    ) {
+        const opponent = botColor === "w" ? "b" : "w";
+
+        const ownAttacks = this.getAttackMap(chess, botColor);
+        const enemyAttacks = this.getAttackMap(chess, opponent);
+
+        let score = 0;
+
+        for (let row = 0; row < 8; row++) {
+
+            for (let col = 0; col < 8; col++) {
+
+                const square = this.toSquare(row, col);
+                const piece = chess.get(square);
+
+                if (!piece || piece.color !== botColor) {
+                    continue;
+                }
+
+                const attackers =
+                    enemyAttacks.get(square) || [];
+
+                const defenders =
+                    ownAttacks.get(square) || [];
+
+                const pieceValue = this.VALUES[piece.type];
+
+                // Onbeschermd en aangevallen = heel slecht.
+                if (attackers.length > 0 && defenders.length === 0) {
+
+                    score -= this.hangingPenalty(pieceValue);
+                    continue;
+                }
+
+                if (attackers.length === 0) {
+                    // Een veilig actief stuk is positief.
+                    score += Math.min(pieceValue / 40, 15);
+                    continue;
+                }
+
+                // Er zijn zowel aanvallers als verdedigers.
+                const tacticalScore =
+                    this.evaluateExchangeRisk(
+                        piece,
+                        attackers,
+                        defenders
+                    );
+
+                score += tacticalScore;
+            }
+        }
+
+        return score;
+    },
+
+    evaluateExchangeRisk(piece, attackers, defenders) {
+
+        const targetValue = this.VALUES[piece.type];
+
+        // Goedkoopste aanvaller.
+        const cheapestAttacker =
+            this.cheapestPiece(attackers);
+
+        // Goedkoopste verdediger.
+        const cheapestDefender =
+            this.cheapestPiece(defenders);
+
+        if (!cheapestAttacker) {
+            return 0;
+        }
+
+        const attackerValue =
+            this.VALUES[cheapestAttacker.type];
+
+        const defenderValue =
+            cheapestDefender
+                ? this.VALUES[cheapestDefender.type]
+                : 0;
+
+        // ------------------------------------------
+        // Geval 1:
+        // pion valt toren aan
+        // ------------------------------------------
+
+        if (attackerValue < targetValue) {
+
+            const difference =
+                targetValue - attackerValue;
+
+            // Zelfs met verdediging kan de tegenstander
+            // de toren voor een goedkope aanvaller ruilen.
+            //
+            // Hoe groter het verschil, hoe gevaarlijker.
+            let penalty =
+                Math.round(difference * 0.42);
+
+            // Nog erger als de verdediger zelf duur is.
+            if (
+                defenderValue > 0 &&
+                defenderValue < attackerValue
+            ) {
+                penalty += 15;
+            }
+
+            return -penalty;
+        }
+
+        // ------------------------------------------
+        // Geval 2:
+        // dame valt toren aan
+        // ------------------------------------------
+
+        if (attackerValue > targetValue) {
+
+            // Tegenstander neemt een toren met een dame,
+            // waarna onze verdediger de dame kan nemen.
+            //
+            // Dat is normaal gezien goed voor ons.
+            const gain =
+                Math.round((attackerValue - targetValue) * 0.32);
+
+            return gain;
+        }
+
+        // Gelijke stukken.
+        return 8;
+    },
+
+    hangingPenalty(value) {
+
+        if (value >= 900) return 260;
+        if (value >= 500) return 180;
+        if (value >= 330) return 110;
+        if (value >= 320) return 105;
+
+        return 70;
+    },
+
+    cheapestPiece(pieces) {
+
+        if (!pieces || !pieces.length) {
+            return null;
+        }
+
+        let cheapest = pieces[0];
+
+        for (const piece of pieces) {
+
+            if (
+                this.VALUES[piece.type] <
+                this.VALUES[cheapest.type]
+            ) {
+                cheapest = piece;
+            }
+        }
+
+        return cheapest;
+    },
+
+    // ------------------------------------------------------------
+    // KING SAFETY
+    // ------------------------------------------------------------
+
+    evaluateKingSafety(chess, botColor) {
+
+        const opponent = botColor === "w" ? "b" : "w";
+
+        const ownKing = this.findKing(chess, botColor);
+        const enemyKing = this.findKing(chess, opponent);
+
+        let score = 0;
+
+        if (!ownKing) {
+            return -1000;
+        }
+
+        if (this.squareAttackedBy(chess, ownKing, opponent)) {
+            score -= 150;
+        } else {
+            score += 30;
+        }
+
+        if (enemyKing) {
+
+            const enemyAttackers =
+                this.getAttackMap(chess, botColor)
+                    .get(enemyKing) || [];
+
+            score += enemyAttackers.length * 8;
+        }
+
+        return score;
+    },
+
+    // ------------------------------------------------------------
+    // PAWNS
+    // ------------------------------------------------------------
+
+    evaluatePawns(chess, botColor) {
+
+        const opponent = botColor === "w" ? "b" : "w";
+
+        let score = 0;
+
+        for (let row = 0; row < 8; row++) {
+
+            for (let col = 0; col < 8; col++) {
+
+                const square = this.toSquare(row, col);
+                const piece = chess.get(square);
+
+                if (!piece || piece.type !== "p") {
+                    continue;
+                }
+
+                let value = 0;
+
+                // Centrumspionnen zijn belangrijk.
+                if (
+                    square === "d4" ||
+                    square === "e4" ||
+                    square === "d5" ||
+                    square === "e5"
+                ) {
+                    value += 25;
+                }
+
+                // Vrijpion-achtige bonus.
+                const forward =
+                    piece.color === "w" ? -1 : 1;
+
+                const nextRow = row + forward;
+
+                if (
+                    nextRow >= 0 &&
+                    nextRow <= 7
+                ) {
+                    value += 3;
+                }
+
+                if (piece.color === botColor) {
+                    score += value;
+                } else {
+                    score -= value;
+                }
+            }
+        }
+
+        return score;
+    },
+
+    // ------------------------------------------------------------
+    // CASTLING
+    // ------------------------------------------------------------
+
+    evaluateCastling(chess, botColor) {
+
+        let score = 0;
+
+        const history = chess.history();
+
+        const hasCastled = history.some(move =>
+            move === "O-O" ||
+            move === "O-O-O"
+        );
+
+        if (hasCastled) {
+            score += 80;
+        }
+
+        return score;
+    },
+
+    // ------------------------------------------------------------
+    // MOVE ORDERING
+    // ------------------------------------------------------------
+
+    orderMoves(chess, moves, side) {
+
+        moves.sort((a, b) => {
+
+            const scoreA =
+                this.moveOrderingScore(chess, a, side);
+
+            const scoreB =
+                this.moveOrderingScore(chess, b, side);
+
+            return scoreB - scoreA;
+        });
+    },
+
+    moveOrderingScore(chess, move, side) {
+
+        let score = 0;
+
+        // Captures eerst.
+        if (move.captured) {
+
+            const victim =
+                this.VALUES[move.captured];
+
+            const attacker =
+                this.VALUES[move.piece];
+
+            // MVV-LVA:
+            // waardevol slachtoffer + goedkope aanvaller.
+            score += victim * 10;
+            score -= attacker * 0.4;
+        }
+
+        // Promotie.
+        if (move.promotion) {
+            score += 8000;
+        }
+
+        // Rokeren.
+        if (
+            move.flags &&
+            move.flags.includes("k")
+        ) {
+            score += 600;
+        }
+
+        // Centrum.
+        if (
+            ["d4", "e4", "d5", "e5"].includes(move.to)
+        ) {
+            score += 180;
+        }
+
+        // Ontwikkeling.
+        if (
+            (move.piece === "n" || move.piece === "b") &&
+            this.isDevelopmentMove(move)
+        ) {
+            score += 140;
+        }
+
+        // Killer moves.
+        const killerList =
+            this.killerMoves.get(`${this.SEARCH_DEPTH}`);
+
+        if (
+            killerList &&
+            killerList.includes(this.moveKey(move))
+        ) {
+            score += 1000;
+        }
+
+        // Checks.
+        if (this.moveGivesCheck(chess, move)) {
+            score += 1200;
+        }
+
+        return score;
+    },
+
+    isDevelopmentMove(move) {
+
+        if (move.piece !== "n" && move.piece !== "b") {
+            return false;
+        }
+
+        const startingSquares = [
+            "b1",
+            "g1",
+            "c1",
+            "f1",
+            "b8",
+            "g8",
+            "c8",
+            "f8"
+        ];
+
+        return startingSquares.includes(move.from);
+    },
+
+    moveGivesCheck(chess, move) {
 
         chess.move({
             from: move.from,
             to: move.to,
-            promotion:
-                move.promotion || "q"
+            promotion: move.promotion || "q"
         });
 
-
-        const givesCheck =
-            chess.in_check();
-
+        const check = chess.in_check();
 
         chess.undo();
 
-
-        return givesCheck;
+        return check;
     },
 
+    // ------------------------------------------------------------
+    // ATTACK MAP
+    // ------------------------------------------------------------
 
-    // ========================================
-    // COORDINATES
-    // ========================================
+    getAttackMap(chess, color) {
 
-    toSquare(
-        row,
-        col
-    ) {
+        const map = new Map();
+        const moves = this.getLegalMoves(chess, color);
 
-        const file =
-            String.fromCharCode(
-                97 + col
-            );
+        for (const move of moves) {
 
+            if (!map.has(move.to)) {
+                map.set(move.to, []);
+            }
 
-        const rank =
-            8 - row;
+            map.get(move.to).push({
+                type: move.piece,
+                from: move.from
+            });
+        }
 
+        return map;
+    },
 
-        return `${file}${rank}`;
+    getLegalMoves(chess, color) {
+
+        const originalTurn = chess.turn();
+
+        if (originalTurn === color) {
+            return chess.moves({ verbose: true });
+        }
+
+        // chess.js genereert moves voor de side-to-move.
+        // We moeten tijdelijk een positie met die kleur als turn
+        // maken. FEN bevat de turn, dus we kunnen hiervoor een
+        // gecontroleerde FEN-aanpassing doen.
+        const fen = chess.fen().split(" ");
+
+        fen[1] = color;
+
+        const temp = new Chess(fen.join(" "));
+
+        return temp.moves({ verbose: true });
+    },
+
+    squareAttackedBy(chess, square, color) {
+
+        const moves = this.getLegalMoves(chess, color);
+
+        return moves.some(move =>
+            move.to === square
+        );
+    },
+
+    // ------------------------------------------------------------
+    // KING
+    // ------------------------------------------------------------
+
+    findKing(chess, color) {
+
+        for (let row = 0; row < 8; row++) {
+
+            for (let col = 0; col < 8; col++) {
+
+                const square = this.toSquare(row, col);
+                const piece = chess.get(square);
+
+                if (
+                    piece &&
+                    piece.type === "k" &&
+                    piece.color === color
+                ) {
+                    return square;
+                }
+            }
+        }
+
+        return null;
+    },
+
+    // ------------------------------------------------------------
+    // TERMINAL POSITIONS
+    // ------------------------------------------------------------
+
+    terminalScore(chess, botColor, ply) {
+
+        if (chess.in_checkmate()) {
+
+            // Als het nu de bot zijn beurt is en hij schaakmat staat:
+            if (chess.turn() === botColor) {
+                return -1000000 + ply;
+            }
+
+            return 1000000 - ply;
+        }
+
+        return 0;
+    },
+
+    // ------------------------------------------------------------
+    // HELPERS
+    // ------------------------------------------------------------
+
+    positionKey(chess) {
+
+        // De eerste vier FEN-velden zijn voldoende voor
+        // onze zoekboom: stukken, side to move, castling,
+        // en en-passant.
+        return chess.fen()
+            .split(" ")
+            .slice(0, 4)
+            .join(" ");
+    },
+
+    moveKey(move) {
+        return `${move.from}${move.to}${move.promotion || ""}`;
+    },
+
+    toSquare(row, col) {
+
+        const files = "abcdefgh";
+
+        return (
+            files[col] +
+            (8 - row)
+        );
+    },
+
+    timeExceeded() {
+
+        return (
+            performance.now() -
+            this.searchStart >
+            this.MAX_SEARCH_TIME
+        );
     }
-
 };
