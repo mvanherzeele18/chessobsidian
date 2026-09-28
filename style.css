@@ -351,6 +351,8 @@ h1 {
     transition:
         transform 100ms ease,
         filter 100ms ease;
+
+    font-variant-emoji: text;
 }
 
 .piece:hover {
