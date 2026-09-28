@@ -1,13 +1,13 @@
 const Obsidian = {
 
     // Maximale diepte. De zoektijd bepaalt in de praktijk hoe diep hij komt.
-    SEARCH_DEPTH: 6,
+    SEARCH_DEPTH: 10,
 
     // Maximale denktijd per zet (ms).
     MAX_SEARCH_TIME: 2800,
 
     // Verdedigende opening: 0 = uit, 1 = normaal, 2 = extra voorzichtig.
-    DEFENSIVE_OPENING: 1,
+    DEFENSIVE_OPENING: 2,
 
     // Na hoeveel zetten de opening-bonussen volledig zijn uitgedoofd.
     OPENING_MOVES: 12,
@@ -24,7 +24,7 @@ const Obsidian = {
     VALUES: {
         p: 100,
         n: 320,
-        b: 330,
+        b: 340,
         r: 500,
         q: 900,
         k: 20000
@@ -803,22 +803,23 @@ const Obsidian = {
             }
 
             // Stukken die nog op hun beginveld staan.
-            let undeveloped = 0;
+            // Lopers wegen zwaarder: die moeten snel het spel in.
+            let undevKnights = 0;
+            let undevBishops = 0;
 
             for (const c of [1, 2, 5, 6]) {
 
                 const p = board[homeRow][c];
 
-                if (
-                    p &&
-                    p.color === color &&
-                    (p.type === "n" || p.type === "b")
-                ) {
-                    undeveloped++;
+                if (p && p.color === color) {
+                    if (p.type === "n") undevKnights++;
+                    if (p.type === "b") undevBishops++;
                 }
             }
 
-            s -= undeveloped * 12;
+            const undeveloped = undevKnights + undevBishops;
+
+            s -= undevKnights * 12 + undevBishops * 24;
 
             // Eén doorloop: dame, flankpionnen, gedekte pionnen.
             let queenAway = false;
@@ -835,6 +836,49 @@ const Obsidian = {
 
                     if (p.type === "q" && !(r === homeRow && c === 3)) {
                         queenAway = true;
+                    }
+
+                    if (p.type === "b") {
+
+                        // Loper: hoe meer vrije diagonaal, hoe beter.
+                        let mob = 0;
+
+                        for (const [dr, dc] of [[-1, -1], [-1, 1], [1, -1], [1, 1]]) {
+
+                            let rr = r + dr;
+                            let cc = c + dc;
+
+                            while (rr >= 0 && rr < 8 && cc >= 0 && cc < 8) {
+
+                                const t = board[rr][cc];
+
+                                if (!t) {
+                                    mob++;
+                                } else {
+                                    if (t.color !== color) mob++;
+                                    break;
+                                }
+
+                                rr += dr;
+                                cc += dc;
+                            }
+                        }
+
+                        s += Math.min(mob, 9) * 4;
+
+                        // Fianchetto (b2/g2 of b7/g7 achter een pion op b3/g3, b6/g6).
+                        const fianchettoRow = color === "w" ? 6 : 1;
+
+                        if (r === fianchettoRow && (c === 1 || c === 6)) {
+
+                            const front = board[r - pawnBehind][c];
+
+                            if (front && front.color === color && front.type === "p") {
+                                s += 15;
+                            }
+                        }
+
+                        continue;
                     }
 
                     if (p.type !== "p") {
@@ -929,6 +973,16 @@ const Obsidian = {
             }
 
             s += this.history.get(key) || 0;
+
+            // Opening: loper van zijn beginveld eerst proberen.
+            if (
+                this.openingWeight > 0 &&
+                move.piece === "b" &&
+                (move.from === "c1" || move.from === "f1" ||
+                 move.from === "c8" || move.from === "f8")
+            ) {
+                s += 5000;
+            }
         }
 
         if (move.promotion) {
