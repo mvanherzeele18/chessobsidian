@@ -336,8 +336,10 @@ h1 {
     z-index: 2;
 
     font-family:
+        "Segoe UI Symbol",
         "Arial Unicode MS",
         "DejaVu Sans",
+        "Noto Sans Symbols 2",
         sans-serif;
 
     font-size: clamp(28px, 5vw, 52px);
