@@ -1,10 +1,10 @@
 const Obsidian = {
 
     // Maximale diepte. De zoektijd bepaalt in de praktijk hoe diep hij komt.
-    SEARCH_DEPTH: 15,
+    SEARCH_DEPTH: 10,
 
     // Maximale denktijd per zet (ms).
-    MAX_SEARCH_TIME: 1000,
+    MAX_SEARCH_TIME: 2800,
 
     // Verdedigende opening: 0 = uit, 1 = normaal, 2 = extra voorzichtig.
     DEFENSIVE_OPENING: 1,
@@ -834,6 +834,137 @@ const Obsidian = {
     },
 
     // ---------------------------------------------------------
+    // CENTRUMCONTROLE
+    //
+    // d4, e4, d5, e5 (in board-coördinaten: rij 3/4, kolom 3/4).
+    // Een stuk dat er staat is sterker dan een stuk dat het alleen
+    // aanvalt, en dat is weer sterker dan niets.
+    // ---------------------------------------------------------
+
+    CENTER_SQUARES: [[3, 3], [3, 4], [4, 3], [4, 4]],
+    CENTER_ATTACK_BONUS: 4,
+    CENTER_OCCUPY_BONUS: 10,
+
+    centerControl(board) {
+
+        let score = 0;
+
+        for (let r = 0; r < 8; r++) {
+
+            for (let c = 0; c < 8; c++) {
+
+                const p = board[r][c];
+
+                if (!p) {
+                    continue;
+                }
+
+                const sign = p.color === "w" ? 1 : -1;
+
+                // Een pion of paard middenin is meer waard dan alleen
+                // het veld aan te vallen (loper/toren/dame tellen niet
+                // mee als bezetter, want die horen niet permanent
+                // midden in het centrum te blijven staan).
+                if (
+                    (p.type === "p" || p.type === "n") &&
+                    this.isCenterSquare(r, c)
+                ) {
+                    score += sign * this.CENTER_OCCUPY_BONUS;
+                }
+
+                for (const [tr, tc] of this.CENTER_SQUARES) {
+
+                    if (r === tr && c === tc) {
+                        continue;
+                    }
+
+                    if (this.attacksSquare(board, p, r, c, tr, tc)) {
+                        score += sign * this.CENTER_ATTACK_BONUS;
+                    }
+                }
+            }
+        }
+
+        return score;
+    },
+
+    isCenterSquare(r, c) {
+
+        return (r === 3 || r === 4) && (c === 3 || c === 4);
+    },
+
+    // Kan het stuk op (r,c) het veld (tr,tc) aanvallen? Telt ook mee
+    // als dat veld al bezet is (controle, geen legale zet).
+    attacksSquare(board, piece, r, c, tr, tc) {
+
+        const dr = tr - r;
+        const dc = tc - c;
+
+        switch (piece.type) {
+
+            case "n":
+                return (
+                    (Math.abs(dr) === 1 && Math.abs(dc) === 2) ||
+                    (Math.abs(dr) === 2 && Math.abs(dc) === 1)
+                );
+
+            case "p": {
+                const dir = piece.color === "w" ? -1 : 1;
+                return dr === dir && Math.abs(dc) === 1;
+            }
+
+            case "k":
+                return (
+                    Math.abs(dr) <= 1 && Math.abs(dc) <= 1 && (dr || dc)
+                );
+
+            case "b":
+                return (
+                    Math.abs(dr) === Math.abs(dc) &&
+                    this.clearPath(board, r, c, tr, tc)
+                );
+
+            case "r":
+                return (
+                    (dr === 0 || dc === 0) &&
+                    this.clearPath(board, r, c, tr, tc)
+                );
+
+            case "q":
+                return (
+                    (dr === 0 || dc === 0 || Math.abs(dr) === Math.abs(dc)) &&
+                    this.clearPath(board, r, c, tr, tc)
+                );
+
+            default:
+                return false;
+        }
+    },
+
+    // Is de rechte lijn tussen (r,c) en (tr,tc) vrij van stukken?
+    // (het beginveld en het doelveld zelf tellen niet mee)
+    clearPath(board, r, c, tr, tc) {
+
+        const dr = Math.sign(tr - r);
+        const dc = Math.sign(tc - c);
+
+        let rr = r + dr;
+        let cc = c + dc;
+
+        while (rr !== tr || cc !== tc) {
+
+            if (board[rr][cc]) {
+                return false;
+            }
+
+            rr += dr;
+            cc += dc;
+        }
+
+        return true;
+    },
+
+    // ---------------------------------------------------------
     // EVALUATION
     //
     // Eén doorloop over het bord. Geeft de score terug vanuit de
@@ -902,6 +1033,13 @@ const Obsidian = {
 
         // 1 = middenspel, 0 = eindspel.
         const mg = Math.min(1, npm / 6000);
+
+        // Centrumcontrole: hoe meer stukken d4/e4/d5/e5 daadwerkelijk
+        // aanvallen of bezetten, hoe beter. Telt vooral mee in de
+        // opening en het middenspel.
+        score += Math.round(
+            this.centerControl(board) * (0.4 + 0.6 * mg)
+        );
 
         // Koning: PST tussen middenspel en eindspel + pionnenschild.
         for (const color of ["w", "b"]) {
