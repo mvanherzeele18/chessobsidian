@@ -4,7 +4,7 @@ const Obsidian = {
     SEARCH_DEPTH: 10,
 
     // Maximale denktijd per zet (ms).
-    MAX_SEARCH_TIME: 2800,
+    MAX_SEARCH_TIME: 5000,
 
     // Verdedigende opening: 0 = uit, 1 = normaal, 2 = extra voorzichtig.
     DEFENSIVE_OPENING: 1,
@@ -965,6 +965,212 @@ const Obsidian = {
     },
 
     // ---------------------------------------------------------
+    // MOBILITEIT
+    //
+    // Hoeveel velden kan elk stuk bereiken (leeg of een vijand erop)?
+    // Een ingesloten loper of een paard zonder goede velden is
+    // minder waard dan dezelfde stukken met veel speelruimte.
+    // Hergebruikt de "pieces"-lijst die evaluate() toch al opbouwt,
+    // dus geen extra doorloop over het hele bord nodig.
+    // ---------------------------------------------------------
+
+    MOBILITY_DIRS: {
+        n: [[-2, -1], [-2, 1], [-1, -2], [-1, 2], [1, -2], [1, 2], [2, -1], [2, 1]],
+        b: [[-1, -1], [-1, 1], [1, -1], [1, 1]],
+        r: [[-1, 0], [1, 0], [0, -1], [0, 1]],
+        q: [[-1, -1], [-1, 1], [1, -1], [1, 1], [-1, 0], [1, 0], [0, -1], [0, 1]]
+    },
+
+    MOBILITY_WEIGHT: { n: 4, b: 5, r: 2, q: 1 },
+
+    mobilityScore(board, pieces) {
+
+        let score = 0;
+
+        for (const p of pieces) {
+
+            const dirs = this.MOBILITY_DIRS[p.type];
+            const sign = p.color === "w" ? 1 : -1;
+
+            let count = 0;
+
+            if (p.type === "n") {
+
+                for (const [dr, dc] of dirs) {
+
+                    const rr = p.r + dr;
+                    const cc = p.c + dc;
+
+                    if (rr < 0 || rr > 7 || cc < 0 || cc > 7) {
+                        continue;
+                    }
+
+                    const t = board[rr][cc];
+
+                    if (!t || t.color !== p.color) {
+                        count++;
+                    }
+                }
+
+            } else {
+
+                for (const [dr, dc] of dirs) {
+
+                    let rr = p.r + dr;
+                    let cc = p.c + dc;
+
+                    while (rr >= 0 && rr < 8 && cc >= 0 && cc < 8) {
+
+                        const t = board[rr][cc];
+
+                        if (!t) {
+                            count++;
+                        } else {
+                            if (t.color !== p.color) {
+                                count++;
+                            }
+                            break;
+                        }
+
+                        rr += dr;
+                        cc += dc;
+                    }
+                }
+            }
+
+            score += sign * this.MOBILITY_WEIGHT[p.type] * count;
+        }
+
+        return score;
+    },
+
+    // ---------------------------------------------------------
+    // PAARD OP EEN BUITENPOST
+    //
+    // Een paard diep in vijandelijk gebied, gedekt door een eigen
+    // pion, en dat nooit meer door een vijandelijke pion verjaagd
+    // kan worden, is een van de sterkste stukken op het bord.
+    // ---------------------------------------------------------
+
+    OUTPOST_BONUS: 18,
+
+    knightOutposts(pieces, pawnRows) {
+
+        let score = 0;
+
+        for (const p of pieces) {
+
+            if (p.type !== "n") {
+                continue;
+            }
+
+            // Alleen interessant voorbij het midden van het bord.
+            const advanced = p.color === "w"
+                ? p.r >= 1 && p.r <= 4
+                : p.r >= 3 && p.r <= 6;
+
+            if (!advanced) {
+                continue;
+            }
+
+            const enemy = p.color === "w" ? "b" : "w";
+
+            // Kan een vijandelijke pion dit veld ooit nog aanvallen?
+            let safe = true;
+
+            for (const dc of [-1, 1]) {
+
+                const f = p.c + dc;
+
+                if (f < 0 || f > 7) {
+                    continue;
+                }
+
+                for (const er of pawnRows[enemy][f]) {
+                    if (p.color === "w" ? er < p.r : er > p.r) {
+                        safe = false;
+                        break;
+                    }
+                }
+
+                if (!safe) {
+                    break;
+                }
+            }
+
+            if (!safe) {
+                continue;
+            }
+
+            // Wordt het zelf door een eigen pion gedekt?
+            const defRow = p.color === "w" ? p.r + 1 : p.r - 1;
+            let defended = false;
+
+            for (const dc of [-1, 1]) {
+
+                const f = p.c + dc;
+
+                if (f < 0 || f > 7) {
+                    continue;
+                }
+
+                if (pawnRows[p.color][f].includes(defRow)) {
+                    defended = true;
+                    break;
+                }
+            }
+
+            if (defended) {
+                score += (p.color === "w" ? 1 : -1) * this.OUTPOST_BONUS;
+            }
+        }
+
+        return score;
+    },
+
+    // ---------------------------------------------------------
+    // TOREN OP DE 7E (2E) RIJ
+    //
+    // Een toren op de rij vlak voor de tegenstander is extra sterk
+    // als de vijandelijke koning nog op de achterste rij staat of
+    // als er nog vijandelijke pionnen op die rij vastzitten.
+    // ---------------------------------------------------------
+
+    ROOK_7TH_BONUS: 20,
+
+    rookSeventh(rooks, kings, pawnRows) {
+
+        let score = 0;
+
+        for (const rook of rooks) {
+
+            const seventhRow = rook.color === "w" ? 1 : 6;
+
+            if (rook.r !== seventhRow) {
+                continue;
+            }
+
+            const enemy = rook.color === "w" ? "b" : "w";
+            const enemyBackRow = rook.color === "w" ? 0 : 7;
+            const k = kings[enemy];
+
+            let trigger = !!k && k.r === enemyBackRow;
+
+            for (let f = 0; f < 8 && !trigger; f++) {
+                if (pawnRows[enemy][f].includes(seventhRow)) {
+                    trigger = true;
+                }
+            }
+
+            if (trigger) {
+                score += (rook.color === "w" ? 1 : -1) * this.ROOK_7TH_BONUS;
+            }
+        }
+
+        return score;
+    },
+
+    // ---------------------------------------------------------
     // EVALUATION
     //
     // Eén doorloop over het bord. Geeft de score terug vanuit de
@@ -1027,7 +1233,7 @@ const Obsidian = {
                 pieces.push({ color: p.color, type: p.type, r, c });
 
                 if (p.type === "b") bishops[p.color]++;
-                if (p.type === "r") rooks.push({ color: p.color, c });
+                if (p.type === "r") rooks.push({ color: p.color, r, c });
             }
         }
 
@@ -1165,6 +1371,15 @@ const Obsidian = {
         // Loperpaar.
         if (bishops.w >= 2) score += 30;
         if (bishops.b >= 2) score -= 30;
+
+        // Mobiliteit: ingesloten stukken worden nu echt bestraft.
+        score += this.mobilityScore(board, pieces);
+
+        // Paarden op een veilige, gedekte buitenpost.
+        score += this.knightOutposts(pieces, pawnRows);
+
+        // Toren op de 7e/2e rij.
+        score += this.rookSeventh(rooks, kings, pawnRows);
 
         // Aanval op de koning (voorzichtig eigen koning, gretig bij kans).
         score += this.kingDanger(pieces, kings, pawnRows, mg);
