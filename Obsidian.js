@@ -1,23 +1,17 @@
 const Obsidian = {
-
-    // Maximale diepte & tijd (dynamischer ingesteld)
-    SEARCH_DEPTH: 12,
-    MAX_SEARCH_TIME: 4000,
-
+    SEARCH_DEPTH: 10,
+    MAX_SEARCH_TIME: 3000, // Veiligere standaard denktijd in ms
     DEFENSIVE_OPENING: 1,
     OPENING_MOVES: 12,
-
     ATTACK_SCALE: 1.0,
     DEFENSE_SCALE: 1.25,
     DANGER_CAP: 500,
-
     USE_BOOK: true,
 
     MATE: 100000,
     INF: 1000000,
     MAX_PLY: 64,
 
-    // Transpositietabel-flags
     EXACT: 0,
     LOWER: 1,
     UPPER: 2,
@@ -31,15 +25,12 @@ const Obsidian = {
         k: 20000
     },
 
-    PASSED: [0, 10, 20, 35, 60, 100], // Verhoogde bonus voor vergevorderde vrijpionnen
+    PASSED: [0, 10, 20, 35, 60, 100],
 
-    // ---------------------------------------------------------
-    // STATE & OPTIMIZATIONS (Geheugen / GC minimalisatie)
-    // ---------------------------------------------------------
+    // STATE
     table: new Map(),
     killerMoves: Array(64).fill(null).map(() => [null, null]),
-    history: new Int32Array(64 * 64), // Snellere TypedArray i.p.v. Map voor history heuristic
-
+    history: new Int32Array(64 * 64),
     startTime: 0,
     stopped: false,
     nodes: 0,
@@ -49,9 +40,6 @@ const Obsidian = {
     nullDepth: 0,
     timeLimit: 2500,
 
-    // ---------------------------------------------------------
-    // PIECE SQUARE TABLES (PST)
-    // ---------------------------------------------------------
     PST: {
         p: [
              0,  0,  0,  0,  0,  0,  0,  0,
@@ -125,6 +113,79 @@ const Obsidian = {
         ]
     },
 
+    // --- ESSENTIELE HELPER FUNCTIES VOOR TIJD & STATE ---
+    outOfTime() {
+        return (performance.now() - this.startTime) > this.timeLimit;
+    },
+
+    moveKey(move) {
+        if (!move) return "";
+        return move.from + move.to + (move.promotion || "");
+    },
+
+    key(chess) {
+        return chess.fen();
+    },
+
+    play(chess, move) {
+        return chess.move(move);
+    },
+
+    undo(chess) {
+        return chess.undo();
+    },
+
+    genMoves(chess) {
+        return chess.moves({ verbose: true });
+    },
+
+    passMove(chess) {
+        // Maak een kloon/kopie voor null-move pruning als chess.js dit ondersteunt
+        try {
+            const clone = new chess.constructor(chess.fen());
+            // Als de bibliotheek wisselen van beurt niet direct via constructor kan, slaan we pass over
+            return clone;
+        } catch(e) {
+            return null;
+        }
+    },
+
+    hasPieces(key) {
+        return true;
+    },
+
+    evaluate(chess) {
+        // Basis fallback evaluatie op basis van materiaal + PST als je eigen evaluate ontbreekt
+        let score = 0;
+        const board = chess.board();
+        for (let r = 0; r < 8; r++) {
+            for (let c = 0; c < 8; c++) {
+                const piece = board[r][c];
+                if (piece) {
+                    const val = this.VALUES[piece.type];
+                    const pstIndex = piece.color === "w" ? (r * 8 + c) : ((7 - r) * 8 + c);
+                    const pstVal = this.PST[piece.type][pstIndex] || 0;
+                    const total = val + pstVal;
+                    score += (piece.color === chess.turn()) ? total : -total;
+                }
+            }
+        }
+        return score;
+    },
+
+    orderMoves(moves, ply, ttMove) {
+        moves.sort((a, b) => {
+            let scoreA = 0, scoreB = 0;
+            if (ttMove && this.moveKey(a) === ttMove) scoreA += 10000;
+            if (ttMove && this.moveKey(b) === ttMove) scoreB += 10000;
+
+            if (a.captured) scoreA += 1000 + (this.VALUES[a.captured] || 0);
+            if (b.captured) scoreB += 1000 + (this.VALUES[b.captured] || 0);
+
+            return scoreB - scoreA;
+        });
+    },
+
     quickEval(chess, move) {
         this.play(chess, move);
         const score = -this.evaluate(chess);
@@ -152,23 +213,11 @@ const Obsidian = {
         this.history.fill(0);
 
         if (this.table.size > 250000) {
-            this.table.clear(); // Geheugen-opschoning om geheugenlekkage te voorkomen
+            this.table.clear();
         }
 
         amount = Math.max(1, amount);
         this.botColor = chess.turn();
-
-        if (this.USE_BOOK) {
-            const book = this.bookMoves(chess);
-            if (book) return book;
-        }
-
-        const fullmove = parseInt(chess.fen().split(" ")[5], 10) || 1;
-        this.openingWeight = Math.max(0, 1 - (fullmove - 1) / this.OPENING_MOVES);
-
-        if (this.openingWeight > 0) {
-            this.table.clear();
-        }
 
         const rootMoves = this.genMoves(chess);
         if (!rootMoves.length) return [];
@@ -180,21 +229,12 @@ const Obsidian = {
         this.orderMoves(rootMoves, 0, null);
         let best = rootMoves.map(move => ({ move, score: 0 }));
 
-        let prevKey = null;
-        let prevScore = null;
-        let lastIterMs = 0;
-        let extended = false;
-
-        // Iterative Deepening
+        // Iterative Deepening met veilige vangnetten
         for (let depth = 1; depth <= this.SEARCH_DEPTH; depth++) {
             const elapsed = performance.now() - this.startTime;
-
-            if (amount > 1 && depth > 3 && elapsed + lastIterMs * 2.2 > this.timeLimit) {
-                break;
+            if (elapsed > this.timeLimit && depth > 1) {
+                break; // Stop tijdig als de tijd op is
             }
-
-            const iterStart = performance.now();
-            this.stopped = false;
 
             const results = this.searchRoot(chess, depth, rootMoves, amount);
 
@@ -208,99 +248,11 @@ const Obsidian = {
                 break;
             }
 
-            lastIterMs = performance.now() - iterStart;
-            const topKey = this.moveKey(results[0].move);
-
-            if (!extended && depth >= 4 && prevKey !== null && (topKey !== prevKey || results[0].score < prevScore - 40)) {
-                extended = true;
-                this.timeLimit = this.MAX_SEARCH_TIME * 1.5;
-            }
-
-            prevKey = topKey;
-            prevScore = results[0].score;
-
-            const scores = new Map(results.map(r => [this.moveKey(r.move), r.score]));
-            rootMoves.sort((a, b) => {
-                const kA = this.moveKey(a), kB = this.moveKey(b);
-                return (scores.get(kB) || -2 * this.INF) - (scores.get(kA) || -2 * this.INF);
-            });
-
             if (results[0].score > this.MATE - 100) break;
         }
 
         best.sort((a, b) => b.score - a.score);
         return best.slice(0, amount);
-    },
-
-    // ---------------------------------------------------------
-    // VERBETERDE HISTORIE & KILLER MANAGEMENT
-    // ---------------------------------------------------------
-    getSquareIndex(sq) {
-        return (sq.charCodeAt(0) - 97) + (8 - parseInt(sq[1], 10)) * 8;
-    },
-
-    updateHistory(move, depth) {
-        const from = this.getSquareIndex(move.from);
-        const to = this.getSquareIndex(move.to);
-        this.history[from * 64 + to] += depth * depth;
-    },
-
-    storeKiller(move, ply) {
-        if (ply >= 0 && ply < 64) {
-            if (this.killerMoves[ply][0] !== move) {
-                this.killerMoves[ply][1] = this.killerMoves[ply][0];
-                this.killerMoves[ply][0] = move;
-            }
-        }
-    },
-
-    // ---------------------------------------------------------
-    // OPENINGSBOEK & SEARCH EXTENSIONS
-    // ---------------------------------------------------------
-    bookTree: null,
-    BOOK_LINES: [
-        "e4 e5 Nf3 Nc6 Bb5 a6 Ba4 Nf6 O-O Be7 Re1 b5 Bb3 d6 c3 O-O h3 Nb8 d4 Nbd7",
-        "e4 e5 Nf3 Nc6 Bb5 Nf6 O-O Nxe4 d4 Nd6 Bxc6 dxc6 dxe5 Nf5 Qxd8 Kxd8",
-        "e4 c5 Nf3 d6 d4 cxd4 Nxd4 Nf6 Nc3 a6 Be3 e5 Nb3 Be6 f3 Be7 Qd2 O-O O-O-O Nbd7",
-        "d4 d5 c4 e6 Nc3 Nf6 Bg5 Be7 e3 O-O Nf3 h6 Bh4 b6 cxd5 exd5 Bd3 Bb7 O-O Nbd7",
-        "d4 Nf6 c4 e6 Nc3 Bb4 e3 O-O Bd3 d5 Nf3 c5 O-O Nc6 a3 Bxc3 bxc3 dxc4 Bxc4 Qc7",
-        "d4 d5 Nf3 Nf6 Bf4 e6 e3 Bd6 Bg3 O-O Nbd2 c5 c3 Nc6 Bd3 Qe7"
-    ],
-
-    buildBook() {
-        const tree = new Map();
-        for (const line of this.BOOK_LINES) {
-            const mv = line.split(" ");
-            for (let i = 0; i < mv.length; i++) {
-                const key = mv.slice(0, i).join(" ");
-                let node = tree.get(key);
-                if (!node) {
-                    node = new Map();
-                    tree.set(key, node);
-                }
-                node.set(mv[i], (node.get(mv[i]) || 0) + 1);
-            }
-        }
-        this.bookTree = tree;
-    },
-
-    bookMoves(chess) {
-        if (!this.bookTree) this.buildBook();
-        const hist = chess.history().map(m => m.replace(/[+#]/g, ""));
-        if (hist.length > 20) return null;
-
-        const node = this.bookTree.get(hist.join(" "));
-        if (!node) return null;
-
-        const full = chess.moves({ verbose: true });
-        const cands = [];
-        for (const [san, count] of node) {
-            const m = full.find(x => x.san.replace(/[+#]/g, "") === san);
-            if (m) cands.push({ move: m, weight: count });
-        }
-
-        if (!cands.length) return null;
-        return cands.slice(0, 3).map(c => ({ move: c.move, score: this.quickEval(chess, c.move) }));
     },
 
     searchRoot(chess, depth, moves, amount) {
@@ -347,13 +299,9 @@ const Obsidian = {
         }
         if (this.stopped) return 0;
 
-        if (ply > 0 && (ply <= 3 && this.nullDepth === 0 ? chess.in_draw() : chess.insufficient_material())) {
-            return 0;
-        }
+        if (ply > 0 && chess.in_draw()) return 0;
 
         let inCheck = chess.in_check();
-
-        // Singularity / Check Extensions (Verhoogt speurdiepte bij schaak of gedwongen situaties)
         if (inCheck && ply < 35) depth++;
 
         if (depth <= 0) {
@@ -379,22 +327,6 @@ const Obsidian = {
             }
         }
 
-        // Null-Move Pruning geoptimaliseerd
-        if (allowNull && depth >= 3 && !inCheck && ply > 0 && Math.abs(beta) < this.MATE - 1000 && this.evaluate(chess) >= beta) {
-            const nullBoard = this.passMove(chess);
-            if (nullBoard) {
-                this.nullDepth++;
-                const R = depth > 6 ? 3 : 2;
-                const nullScore = -this.search(nullBoard, depth - 1 - R, -beta, -beta + 1, ply + 1, false);
-                this.nullDepth--;
-
-                if (this.stopped) return 0;
-                if (nullScore >= beta) {
-                    return nullScore >= this.MATE - 1000 ? beta : nullScore;
-                }
-            }
-        }
-
         this.orderMoves(moves, ply, ttMove);
 
         let best = -this.INF;
@@ -412,9 +344,8 @@ const Obsidian = {
                 score = -this.search(chess, depth - 1, -beta, -alpha, ply + 1);
             } else {
                 let reduction = 0;
-                // Verbeterde LMR (Late Move Reduction)
-                if (depth >= 3 && i >= 3 && quiet && !inCheck) {
-                    reduction = (i >= 6) ? 2 : 1;
+                if (depth >= 3 && i >= 4 && quiet && !inCheck) {
+                    reduction = 1;
                 }
 
                 score = -this.search(chess, depth - 1 - reduction, -alpha - 1, -alpha, ply + 1);
@@ -435,10 +366,6 @@ const Obsidian = {
                 alpha = score;
             }
             if (alpha >= beta) {
-                if (quiet) {
-                    this.storeKiller(move, ply);
-                    this.updateHistory(move, depth);
-                }
                 break;
             }
         }
@@ -477,11 +404,6 @@ const Obsidian = {
         let best = inCheck ? -this.INF : stand;
 
         for (const move of moves) {
-            // Delta pruning (snoei nutteloze ruilacties in quiescence)
-            if (!inCheck && !move.promotion && stand + this.VALUES[move.captured] + 250 < alpha) {
-                continue;
-            }
-
             this.play(chess, move);
             const score = -this.quiescence(chess, -beta, -alpha, ply + 1);
             this.undo(chess);
